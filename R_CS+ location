@@ -1,0 +1,2721 @@
+---
+title: "Handylib_S2_analysis_counter_CS+ location"
+author: 
+  - name: "H. Du"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: readable
+    css: style.css   # external CSS file for styling
+  pdf_document:
+    toc: true
+    number_sections: true
+    fontsize: 11pt         # Sets consistent font size
+    geometry: margin=1in   # 1-inch margins for PDFs
+    includes:
+      in_header: preamble.tex   # optional: if you want LaTeX tweaks like line spacing
+  word_document:
+    toc: true
+header-includes:
+  - \usepackage{float}  # Keeps figures from floating around in LaTeX output
+---
+
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+<!-- This first chunk define the global settings-->
+
+```{r, include = FALSE}
+
+# Setup global settings
+knitr::opts_chunk$set(message=FALSE, warning=FALSE)
+```
+
+
+```{r, include = FALSE}
+# Install packages (if needed)
+required_packages <- c("tidyr", "lubridate", "skimr", "ggplot2", 
+                       "naniar", "visdat", "esmtools","readxl","devtools",
+                       "sjstats","lmerTest","emmeans",'effsize','reshape2',
+                       "plyr","ggpubr","gridExtra","dplyr","ggnewscale")
+ #"ordinal
+
+for (package in required_packages) {
+    if (!require(package, character.only = TRUE, quietly = TRUE)) {
+        install.packages(package, dependencies = TRUE)
+    }
+}
+```
+
+```{r, include = FALSE}
+if (!require("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+
+# heatmap 
+BiocManager::install("ComplexHeatmap")
+devtools::install_github("jokergoo/colorRamp2")
+library(colorRamp2) # gradient color
+
+
+
+```
+
+```{r, include = FALSE}
+
+library(devtools)
+library(readxl)
+library(foreign)
+library(sjstats)   
+library(lmerTest)
+#library(ordinal)
+library(emmeans)
+library(effectsize) # package sjstats eta-square
+library(effects)
+library(effsize)
+library(ggplot2)
+library(reshape2)
+library(plyr)
+library(ggeffects)
+library(dplyr)
+library(rsq)
+library(scales)
+library(gridExtra)
+library(ggnewscale)
+library(ComplexHeatmap)
+library(car)
+
+
+```
+
+```{r,clear_environment, include = FALSE}
+# clear the environment
+rm(list = ls())
+
+```
+
+```{r, include = FALSE}
+# set-up theme for plots
+if(T){mytheme <- theme(plot.title = element_text(size = 12,color="black",hjust = 0),
+                       axis.title = element_text(size = 12,color ="black"), 
+                       axis.text = element_text(size= 12,color = "black"),
+                       panel.grid.minor.y = element_blank(),
+                       panel.grid.minor.x = element_blank(),
+                       legend.position = "right",
+                       legend.text = element_text(size= 12),
+                       legend.title= element_text(size= 12))}
+options(digits = 4) # control digits for all output 
+
+# color menu
+
+library(RColorBrewer)
+display.brewer.all()
+
+```
+
+# Pavlovian： counterbalancing 
+In this section, we analyze the confounder factor of counterbalancing factors.
+
+```{r fear_rating, include = FALSE}
+
+# dummy coded label for data analysis 
+
+room_labels <- c("0" = "CS+ room", "1" = "CS- room")
+
+location_labels <- c("0" = "CS+ location", "1" = " CS- location")
+
+counter_labels <- c("0" = "Stretching", "1" = "Bending")
+
+# Read data
+excel_file <- '/Users/mac/Library/CloudStorage/Dropbox/Generalization_2402/2023-2024_GEN/2_Data_processing/Gen_Denoised data/5_questionnaire/handylib_2_questionnaire.xlsx'
+
+# Specify the name of the sheet (sleet) you want to read
+fear_sheet_name <- "pav_question"  
+
+# Read the data from the specified sheet
+fear_data <- read_excel(excel_file, sheet = fear_sheet_name)
+
+# dummy_coded the fixed factors 
+fear_data <- fear_data %>% 
+  mutate(dummy_room = case_when(
+    cs_room == 'CS+' ~ 0, 
+    cs_room == 'CS-' ~ 1))
+fear_data <- fear_data %>% 
+  mutate(dummy_counter = case_when(
+    CS == 'stretching' ~ 0,
+    CS == 'bending' ~ 1))
+
+
+fear_data$dummy_counter       <- as.factor(fear_data$dummy_counter)
+fear_data$dummy_room          <- as.factor(fear_data$dummy_room)
+#fear_data$Pavlovian_fearrating <- ordered(fear_data$Pavlovian_fearrating)
+
+```
+
+
+### pain-related fear 
+
+There is no significant two-way interaction (cs_room * counterbalancing) on 
+pain-related fear rating; Therefore, the counterbalancing will be removed 
+from model
+
+```{r fear_rate_model, include=FALSE}
+##========================== model comparsion ==================================
+
+library(nlme) 
+
+# interaction： counter * room
+mod.1<- lme(Pavlovian_fearrating ~ dummy_counter*dummy_room, random = ~1 | ID,
+            data = fear_data)
+
+# main-effect of room type 
+mod.2<- lme(Pavlovian_fearrating ~ dummy_room, random = ~1 | ID, 
+            data = fear_data)
+
+anova(mod.1,mod.2)
+
+##======================== t.test ==============================================
+# subset data 
+fear_split<- split(fear_data,fear_data$cs_room)
+
+# Mean and SD 
+mean_csp <- mean(fear_split $ 'CS+' $ `Pavlovian_fearrating`)
+sd_csp   <-   sd(fear_split $ 'CS+' $ `Pavlovian_fearrating`)
+mean_csm <- mean(fear_split $ 'CS-' $ `Pavlovian_fearrating`)  
+sd_csm   <-   sd(fear_split $ 'CS-' $ `Pavlovian_fearrating`)
+
+mean.sd <- round(data.frame(mean_csp,sd_csp,mean_csm,sd_csm),3)
+print(mean.sd)
+
+# paired -simple T test
+result  <- t.test(fear_split $ 'CS+' $ `Pavlovian_fearrating`,
+                  fear_split $ 'CS-' $ `Pavlovian_fearrating`, paired = TRUE)
+
+print(result)
+
+# cohen's dz paired = True; 
+cohend  <- cohen.d(fear_split $ 'CS+' $ `Pavlovian_fearrating`,
+                   fear_split $ 'CS-' $ `Pavlovian_fearrating`,
+                   
+                 pooled=TRUE,paired= TRUE,
+                 na.rm= TRUE, mu=0, hedges.correction= FALSE,
+                 conf.level=0.95,noncentral= FALSE,
+                 within=TRUE, subject= NA)
+print(cohend)
+
+
+##========================  plot ==============================================
+
+
+# lines and error bar
+fear_data$cs_room<- factor(fear_data$cs_room,levels=c('CS+','CS-'))
+
+fig1a<- ggplot(fear_data, aes(x = factor(cs_room), y = Pavlovian_fearrating, 
+                      group = factor(cs_room))) +
+  
+  geom_point(aes(colour = factor(cs_room)), alpha = 0.1,show.legend = FALSE) +
+  scale_color_manual(values = c('grey','grey')) +
+  
+  geom_line(aes(group = ID, colour = factor(cs_room)), alpha = 0.5,
+            show.legend = FALSE) +
+  
+  stat_summary(fun = "mean", geom = "point", size = 0.8, 
+               position = position_dodge(width = 0.1)) +
+  
+  stat_summary(fun = "mean", geom = "line", size = 1) +
+  
+  stat_summary(fun.data = "mean_se", geom = "errorbar", 
+               width = 0.2, color = 'black',show.legend = FALSE) +
+ 
+   labs(x = "", y = 'Self-report Pain-releted Fear') + 
+  
+  scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, 5)) +
+  
+  scale_x_discrete(labels = c('CS+ room ','CS- room')) + 
+ 
+   theme_classic()+ggtitle("A. ")+mytheme 
+
+
+ggsave("/Users/mac/Library/CloudStorage/Dropbox/Generalization_2402/2023-2024_GEN/4_resultplot/Counter/1A.png", plot = fig1a, width = 8.27, height = 8.27, units = "in", dpi = 300)
+
+
+```
+
+### pain expectancy
+
+```{r echo = FALSE}
+##========================== model comparsion ==================================
+
+# interaction: counterbalancing * room 
+mod.1 <- lme(Pavlovian_painexpectancy ~ dummy_counter*dummy_room, 
+            random = ~1 | ID, data = fear_data)
+
+# main-effect of room 
+mod.2 <- lme(Pavlovian_painexpectancy  ~ dummy_room, 
+            random = ~1 | ID, data = fear_data)
+
+anova(mod.1,mod.2)
+
+##======================== t.test ==============================================
+# Mean and SD
+mean_csp <- mean(fear_split $ 'CS+' $ `Pavlovian_painexpectancy`)
+
+sd_csp   <-   sd(fear_split $ 'CS+' $ `Pavlovian_painexpectancy`)
+
+mean_csm <- mean(fear_split $ 'CS-' $ `Pavlovian_painexpectancy`)
+
+sd_csm   <-   sd(fear_split $ 'CS-' $ `Pavlovian_painexpectancy`)
+
+mean.sd  <- round(data.frame(mean_csp,sd_csp,mean_csm,sd_csm),3)
+
+print(mean.sd)
+
+# paired -simple T test
+t.test <- t.test(fear_split $ 'CS+' $ `Pavlovian_painexpectancy`,
+                 fear_split $ 'CS-' $ `Pavlovian_painexpectancy`, 
+                 paired = TRUE)
+print(t.test)
+
+# cohen's dz
+
+cohend <- cohen.d(fear_split $ 'CS+' $ `Pavlovian_painexpectancy`,
+        fear_split $ 'CS-' $ `Pavlovian_painexpectancy`,
+        pooled = TRUE, paired = TRUE,
+        na.rm  = TRUE, mu = 0, hedges.correction = FALSE,
+        conf.level = 0.95,noncentral = FALSE,
+        within = TRUE, subject = NA)
+
+print(cohend)
+
+
+##========================  plot ==============================================
+
+fear_data $ cs_room <- factor(fear_data $ cs_room,levels=c('CS+','CS-'))
+
+
+fig1b<- ggplot(fear_data, aes(x = factor(cs_room), y = Pavlovian_painexpectancy, 
+                      group = factor(cs_room))) +
+  geom_point(aes(colour = factor(cs_room)), alpha = 0.1,show.legend = FALSE) +
+  scale_color_manual(values = c('grey','grey')) +
+  geom_line(aes(group = ID, colour = factor(cs_room)), 
+            alpha = 0.5,show.legend = FALSE) +
+  stat_summary(fun = "mean", geom = "point", size = 0.8, 
+               position = position_dodge(width = 0.1)) +
+  stat_summary(fun = "mean", geom = "line", size = 1) +
+  stat_summary(fun.data = "mean_se", geom = "errorbar", width = 0.2, 
+               color = 'black',show.legend = FALSE) +
+  labs(x = "", y = 'Self-report Pain-US Expectancy') + 
+  scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, 5)) +
+  scale_x_discrete(labels = c('CS+ room ','CS- room'))+
+  theme_classic()+ggtitle("B. ")+ mytheme
+
+ggsave("/Users/mac/Library/CloudStorage/Dropbox/Generalization_2402/2023-2024_GEN/4_resultplot/Counter/1B.png", plot = fig1b, width = 8.27, height = 8.27, units = "in", dpi = 300)
+
+
+
+```
+
+### pupil dilation 
+
+```{r echo = FALSE}
+##========================== preprocessing data  ===============================
+# read data 
+
+excel.file <- file.path("/Users/mac/Library/CloudStorage/Dropbox/",
+                   "Generalization_2402/2023-2024_GEN/2_Data_processing/",
+                   "Gen_Denoised data/1_Pavlovian_data/p1_eyetracking_mix.sav")
+
+pavlov.pd <- read.spss(excel.file,to.data.frame = TRUE)
+
+# dummy coded label for data analysis 
+pavlov.pd <- pavlov.pd  %>% 
+  mutate(
+    
+    dummy_location = case_when(
+      cs_location == "CS+" ~ 0,
+      cs_location == "CS-" ~ 1,
+      TRUE ~ NA_real_  # Handle unexpected values
+    ),
+  
+    dummy_room = case_when(
+      cs_room == "CS+" ~ 0,
+      cs_room == "CS-" ~ 1,
+      TRUE ~ NA_real_
+    ),
+    
+    dummy_counter = case_when(
+      pain_us_location == "stretching" ~ 0,
+      pain_us_location == "bending   "    ~ 1,  # Removed extra spaces
+      TRUE ~ NA_real_  # Handle unexpected values
+    )
+  )
+
+# Made fixed factor as factors
+pavlov.pd$dummy_counter <- as.factor(pavlov.pd$dummy_counter)
+
+pavlov.pd$dummy_room    <- as.factor(pavlov.pd$dummy_room)
+
+pavlov.pd$dummy_location<- as.factor(pavlov.pd$dummy_location)
+
+room_labels     <- c("0" = "CS+ room",     "1" = "CS- room")
+
+location_labels <- c("0" = "CS+ location", "1" = " CS- location")
+
+counter_labels  <- c("0" = "Stretching",   "1" = "Bending")
+
+
+##========================== model comparsion ==================================
+
+# three-way interaction: counter* room * location 
+mod.1 <- lmer(cs_pd ~ 1 + dummy_counter * dummy_room * dummy_location +
+                       (1 | trial_number) + (1+ cs_location|id), data = pavlov.pd)
+# two way: room * location
+mod.2 <- lmer(cs_pd ~ 1 + dummy_room * dummy_location + (1|trial_number) + 
+                         (1 + cs_location | id), data = pavlov.pd)
+
+anova(mod.1,mod.2)  
+
+
+```
+__Model comparision explanation__
+
+The three-way interaction model (mod.1) provides a significantly better fit 
+than the two-way interaction model (mod.2), as indicated by 
+lower AIC (974 vs. 1001) and BIC (880 vs. 935) values. 
+The chi-square test also shows a significant improvement in model fit 
+(ΔDeviance = 55.7, Δdf = 4, p = 2.3e-11).
+
+```{r Pavlovian PD, echo = FALSE}
+
+# mixed-effect model
+mod.1 <- lmer(cs_pd ~ 1 + dummy_room * dummy_location * dummy_counter + 
+                    (1 | trial_number) + (1 + dummy_location | id), 
+                    data = pavlov.pd)
+
+##========================== Summary model =====================================
+# Displays fixed effect estimates, standard errors, t-values, 
+# and random effect structure
+summary(mod.1) 
+
+# Type I ANOVA to examine variance explained by each term sequentially
+  anova(mod.1)  
+
+# Calculates eta-squared for fixed effects
+eta_squared(mod.1)
+
+##========================== Post-hoc ==========================================
+# Compare levels of dummy_location at each level of dummy_counter
+emmeans(mod.1, pairwise ~ dummy_location | dummy_counter, adjust="Holm") 
+
+# Compare levels of dummy_location at each level of dummy_room
+emmeans(mod.1, pairwise ~ dummy_location | dummy_room,    adjust="Holm") 
+
+# effect size
+# stretching: cs+ location vs. cs- location 
+cohen.d(pavlov.pd $ cs_pd[pavlov.pd $ dummy_counter  == '0' & 
+                          pavlov.pd $ dummy_location == "0"],
+        pavlov.pd $ cs_pd[pavlov.pd $ dummy_counter  == "0" & 
+                          pavlov.pd $ dummy_location == "1"],
+        
+        pooled=TRUE,paired= FALSE,
+        na.rm=TRUE, mu=0, hedges.correction=FALSE,
+        conf.level=0.95,noncentral= FALSE,
+        within=TRUE, subject=NA)
+
+# bending: cs+ location vs. cs- location 
+cohen.d(pavlov.pd $ cs_pd[pavlov.pd $ dummy_counter  == "1" & 
+                          pavlov.pd $ dummy_location == "0"],
+        pavlov.pd $ cs_pd[pavlov.pd $ dummy_counter  == '1' &  
+                          pavlov.pd $ dummy_location == "1"],
+        
+        pooled=TRUE,paired= FALSE,
+        na.rm=TRUE, mu=0, hedges.correction=FALSE,
+        conf.level=0.95,noncentral= FALSE,
+        within=TRUE, subject=NA)
+
+
+# cs+room: cs location 
+cohen.d(pavlov.pd $ cs_pd[pavlov.pd $ dummy_room     == "0" & 
+                          pavlov.pd $ dummy_location == "0"],
+        pavlov.pd $ cs_pd[pavlov.pd $ dummy_room     == "0" &
+                          pavlov.pd $ dummy_location == '1'],
+        
+        pooled=TRUE,paired= FALSE,
+        na.rm=TRUE, mu=0, hedges.correction=FALSE,
+        conf.level=0.95,noncentral= FALSE,
+        within=TRUE, subject=NA)
+
+ # cs- room: cs location 
+cohen.d(pavlov.pd $ cs_pd[pavlov.pd $ dummy_room     == "1" & 
+                          pavlov.pd $ dummy_location == "0"],
+        pavlov.pd $ cs_pd[pavlov.pd $ dummy_room     == "1" & 
+                          pavlov.pd $ dummy_location == '1'],
+       
+        pooled=TRUE,paired= FALSE,
+        na.rm=TRUE, mu=0, hedges.correction=FALSE,
+        conf.level=0.95,noncentral= FALSE,
+        within=TRUE, subject=NA)
+
+##========================  plot ===============================================
+
+# Extract the 3-way interaction effect from the model
+eff <- effect("dummy_room * dummy_location*dummy_counter", mod.1)
+
+# Convert effect object to a data frame for ggplot
+eff <- as.data.frame(eff)
+
+#Ensure all dummy variables are treated as factors with defined levels
+eff $ dummy_room     <- factor(eff $ dummy_room,     levels = c('0','1'))
+eff $ dummy_location <- factor(eff $ dummy_location, levels = c('0','1'))
+eff $ dummy_counter  <- factor(eff $ dummy_counter,  levels = c("0",'1'))                                 
+
+# effect plot _  location * room 
+fig1c <- ggplot(eff, aes(x = dummy_location, y = fit, color = dummy_room)) +
+
+  # Add points for estimated effects
+  geom_point(size = 3) +  
+  
+   # Add lines connecting levels
+  geom_line(aes(group = dummy_room), linewidth = 1) + 
+  
+  # Confidence intervals
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2) +  
+  
+  # Wrap by dummy_counter
+  facet_wrap(~ dummy_counter, 
+             labeller = labeller(dummy_counter = counter_labels)) +  
+  
+  scale_x_discrete(labels = location_labels) +
+  
+  
+  scale_y_continuous(limits = c(-0.5,0.4), breaks = seq(-0.4, 0.4, by = 0.2)) +
+  labs(title = " ",
+       x = " ", y = "Pupil Dilation (Effect Estimate)") +
+ 
+   # Custom colors
+  scale_color_manual(values = c("#D76364", "#496c88")) +  
+  
+  theme_classic()+
+  
+  theme(strip.text = element_text(size = 11, face = "bold"),
+   axis.title.y = element_text(size = 11, face = "bold"),
+   axis.title.x = element_text(size = 11, face = "bold"))+ mytheme
+
+ggsave("/Users/mac/Library/CloudStorage/Dropbox/Generalization_2402/2023-2024_GEN/4_resultplot/Counter/1C.png", plot = fig1c, width = 8.27, height = 8.27, units = "in", dpi = 300)
+
+```
+
+
+### urge to leave 
+
+```{r echo = FALSE}
+##========================== model comparsion ==================================
+
+# two-way interaction: counter * room 
+mod.1<- lme(Pavlovian_avoid ~ dummy_counter * dummy_room, random = ~1 | ID, 
+            data = fear_data)
+
+# moin-effect of room 
+mod.2<- lme(Pavlovian_avoid ~ dummy_room, random = ~1 | ID, data = fear_data)
+
+anova(mod.1, mod.2)
+
+#======================== t.test ==============================================
+mean_csp <-  mean(fear_split $ 'CS+' $ `Pavlovian_avoid`)
+sd_csp   <-    sd(fear_split $ 'CS+' $ `Pavlovian_avoid`)
+mean_csm <-  mean(fear_split $ 'CS-' $ `Pavlovian_avoid`)
+sd_csm   <-    sd(fear_split $ 'CS-' $ `Pavlovian_avoid`)
+
+mean.sd  <- round(data.frame(mean_csp,sd_csp,mean_csm,sd_csm),3)
+
+print(mean.sd)
+
+# paired -simple T test
+t.test   <- t.test(fear_split $ 'CS+' $ `Pavlovian_avoid`,
+                   fear_split $ 'CS-' $ `Pavlovian_avoid`, paired = TRUE)
+print(t.test)
+
+#  Cohen dz
+cohend  <- cohen.d(fear_split $ 'CS+' $ `Pavlovian_avoid`,
+                   fear_split $ 'CS-' $ `Pavlovian_avoid`,
+                   
+                   pooled=TRUE,paired= TRUE,
+                   na.rm= TRUE, mu=0, hedges.correction= FALSE,
+                   conf.level=0.95,noncentral= FALSE,
+                   within=TRUE, subject= NA)
+
+print(cohend)
+
+##========================  plot ===============================================
+
+fear_data$dummy_room<- factor(fear_data$dummy_room)
+
+fig2a<- ggplot(fear_data, aes(x = factor(dummy_room), y = Pavlovian_avoid, 
+                      group = factor(dummy_room))) +
+  
+  geom_point(aes(colour = factor(dummy_room)), alpha = 0.1,
+             show.legend = FALSE) +
+  scale_color_manual(values = c('grey','grey')) +
+  
+  geom_line(aes(group = ID, colour = factor(dummy_room)), alpha = 0.5,
+            show.legend = FALSE) +
+  stat_summary(fun = "mean", geom = "point", size = 0.8, 
+               position = position_dodge(width = 0.1)) +
+  
+  stat_summary(fun = "mean", geom = "line", size = 1) +
+  
+  stat_summary(fun.data = "mean_se", geom = "errorbar",
+               width = 0.2, color = 'black',show.legend = FALSE) +
+  labs(x = "", y = 'Self-report Urge to Avoid') + 
+  
+  scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, 5)) +
+  
+  scale_x_discrete(labels = c('CS+ room ','CS- room')) +
+  
+    theme_classic()+ggtitle("A. ")+mytheme 
+
+
+ggsave("/Users/mac/Library/CloudStorage/Dropbox/Generalization_2402/2023-2024_GEN/4_resultplot/Counter/2A.png", plot = fig2a, width = 8.27, height = 8.27, units = "in", dpi = 300)
+
+
+
+```
+
+
+### attention indices
+
+```{r echo = FALSE}
+##========================== preprocessing data  ===============================
+# read data 
+
+#Pavlov_pff_sep <- read.spss('/Users/mac/Library/CloudStorage/Dropbox/Generalization_2402/2023-2024_GEN/2_Data_processing/Gen_Denoised # data/1_Pavlovian_data/p1_eyetracking_cs_counter.sav',to.data.frame = TRUE)
+
+
+excel.file <- file.path("/Users/mac/Library/CloudStorage/Dropbox",
+                       "/Generalization_2402/2023-2024_GEN/2_Data_processing",
+                       "/Gen_Denoised data/1_Pavlovian_data",
+                       "/p1_eyetracking_cs_counter_mix.sav")
+Pavlov.pff <- read.spss(excel.file,to.data.frame = TRUE)
+
+
+
+#  dummy coded ID
+
+Pavlov.pff  <- Pavlov.pff %>% mutate(
+  
+        dummy_location = case_when(
+           cs_location == "CS+" ~ 0,
+           cs_location == "CS-" ~ 1,
+        
+        # Handle unexpected values
+        TRUE ~ NA_real_ ),
+  
+            dummy_room = case_when(
+               cs_room == "CS+" ~ 0,
+               cs_room == "CS-" ~ 1,
+        TRUE ~ NA_real_ ),
+    
+         dummy_counter = case_when(
+      counterbalancing == "stretching" ~ 0,
+      counterbalancing == "bending   "    ~ 1,
+        TRUE ~ NA_real_ ))
+
+
+# dummy_code ID 
+
+# Pavlov.pff select the CS+ location 
+
+Pavlov.pff <- subset(Pavlov.pff, cs_location == "CS+")
+
+
+Pavlov.pff $                  id <- factor(Pavlov.pff $ id)
+Pavlov.pff $          dummy_room <- factor(Pavlov.pff $ dummy_room)
+Pavlov.pff $      dummy_location <- factor(Pavlov.pff $ dummy_location)
+Pavlov.pff $ dummy_couterbalance <- factor(Pavlov.pff$ dummy_counte)
+
+#  label
+
+room_labels     <- c("0" = "CS+ room",     "1" = "CS- room")
+
+#location_labels <- c("0" = "CS+ location", "1" = " CS- location")
+
+counter_labels  <- c("0" = "Stretching",   "1" = "Bending")
+
+
+```
+
+
+```{r cs_8trials, echo = FALSE}
+
+##========================== proportion——8 trials ==============================
+
+library(plyr)
+library(dplyr)
+
+detach('package:plyr')
+
+# Summarizing the number of trials per participant
+
+
+excel.file <- file.path("/Users/mac/Library/CloudStorage/Dropbox",
+                       "/Generalization_2402/2023-2024_GEN/2_Data_processing",
+                       "/Gen_Denoised data/1_Pavlovian_data",
+                       "/p1_eyetracking_cs_counter.sav")
+Pavlov.pff.sep <- read.spss(excel.file,to.data.frame = TRUE)
+
+# select the no vaild data on the CS location 
+
+Pavlov_pff_sep_v2 <- subset(Pavlov.pff.sep, csp_tff>-1 |csm_tff> -1 )
+
+# caluclate the real trials at individual level 
+
+library(dplyr)
+# This counts how many trials each participant (id) had per dummy_room
+summary_trials_cs <- Pavlov_pff_sep_v2 %>%
+  group_by(id, cs_room) %>%
+  summarise(total_trials = n(), .groups = "drop")
+
+print(summary_trials_cs)
+
+       Pavlov.pff $ id <- as.character(Pavlov.pff        $ id)
+summary_trials_cs $ id <- as.character(summary_trials_cs $ id)
+
+# combine the CS room trials in the Pavlov.pff
+Pavlov_with_trials  <- Pavlov.pff %>%
+left_join(summary_trials_cs, by = c("id", "cs_room"))
+
+#  Group and summarise frequency and percentage
+proportion_data_cs <- Pavlov_with_trials %>%
+  group_by(id, dummy_counter, dummy_room) %>%
+  summarise(
+    frequency = sum(cs_pff == 1, na.rm = TRUE),
+    total_opportunity = first(total_trials),  # already joined in!
+    percentage = frequency / total_opportunity,
+    .groups = "drop"
+  )
+print(proportion_data_cs)
+# Convert dummy variables to factors for modeling or plotting
+
+proportion_data_cs $ dummy_counter  <- factor(proportion_data_cs $ dummy_counter)
+proportion_data_cs $ dummy_room     <- factor(proportion_data_cs $ dummy_room)
+#proportion_data_cs $ dummy_location <- factor(proportion_data_cs $ dummy_location)
+
+# Optional: Print the final data frame
+print(proportion_data_cs)
+
+
+```
+
+
+__missing trial__
+
+4	  CS+	7	
+8	  CS-	7	
+23	CS+	7		
+56	CS+	7	
+
+```{r echo = FALSE}
+##========================== model comparsion ==================================
+# two-way: room* location
+mod.1 <- glm(
+  cbind(frequency, total_opportunity - frequency) ~ dummy_room,
+  data = proportion_data_cs,
+  family = "binomial"
+)
+
+# counter as a between-subject factor
+mod.2 <- glm(
+  cbind(frequency, total_opportunity - frequency) ~ 
+    dummy_counter + dummy_room,
+  data = proportion_data_cs,
+  family = "binomial"
+)
+
+# three-way interaction 
+mod.3 <- glm(
+  cbind(frequency, total_opportunity - frequency) ~ 
+    dummy_counter * dummy_room,
+  data = proportion_data_cs,
+  family = "binomial"
+)
+
+anova(mod.1,mod.2,mod.3)
+
+
+
+##========================== summary model =====================================
+
+mod.3 <- glm(
+  cbind(frequency, total_opportunity - frequency) ~ 
+    dummy_counter * dummy_room,
+  data = proportion_data_cs,
+  family = "binomial"
+)
+
+summ_mod <- summary (mod.3)
+Anov_mod <- Anova   (mod.3, type = 3)
+  
+print (summ_mod)
+print (Anov_mod)
+
+# OR ratio
+
+es <- coef(mod.3)
+se <- sqrt(diag(vcov(mod.3)))
+
+# 95% interval 
+CI <- cbind(
+OR = exp(es),
+LL = exp(es - 1.96 * se),
+UL = exp(es + 1.96 * se)
+)
+
+print(round(CI, 3))
+
+##========================== post-analysis =====================================
+
+emmeans(mod.3, pairwise~ dummy_counter, adjust = "Holm", 
+        pbkrtest.limit = 4128)
+cohen.d(proportion_data_cs $ percentage[proportion_data_cs $ dummy_counter  == '0' ],
+        proportion_data_cs $ percentage[proportion_data_cs $ dummy_counter  == "1" ],
+        
+        pooled=TRUE,paired= FALSE,
+        na.rm=TRUE, mu=0, hedges.correction=FALSE,
+        conf.level=0.95,noncentral= FALSE,
+        within=TRUE, subject=NA)
+
+
+##========================  plot ===============================================
+
+library(effects)
+
+eff    <- effect("dummy_counter * dummy_room", mod.3)
+
+# Convert effect object to a data frame for ggplot
+eff_df <- as.data.frame(eff)
+
+
+eff_df $ dummy_room     <- factor(eff_df$dummy_room, levels = c('0','1'))
+#eff_df $ dummy_location <- factor(eff_df$dummy_location, levels = c('0','1'))
+eff_df $ dummy_counter  <- factor(eff_df$dummy_counter, levels = c("0",'1'))                                 
+
+# effect plot _  location * room 
+fig3a <- ggplot(eff_df, aes(x = dummy_counter, y = fit, color = dummy_room)) +
+
+  geom_point(size = 3) +  # Add points for estimated effects
+  geom_line(aes(group = dummy_room), linewidth = 1) +  # Add lines connecting levels
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2) +  # Confidence intervals
+  
+# Wrap by dummy_counter
+#facet_wrap(~ dummy_counter, labeller = labeller(dummy_counter = counter_labels)) + 
+   scale_x_discrete   (labels = counter_labels) +
+   scale_y_continuous (limits = c(0,1), breaks = seq(0,1, by = 0.25)) +
+   labs(title = " ",
+       x = " ", y = "Proportion of First Fixation on CS+ Location \n (Effect Estimate)") +
+   scale_color_manual(values = c("#D76364", "#496c88")) +  # Custom colors
+   theme_classic()+
+   theme(strip.text = element_text(size = 14, face = "bold"),
+       axis.title.y = element_text(size = 11, face = "bold"))+ 
+  mytheme
+
+print(fig3a)
+
+ggsave("/Users/mac/Library/CloudStorage/Dropbox/Generalization_2402/2023-2024_GEN/4_resultplot/Counter_CS/3A.png", plot = fig3a, width = 8.27, height = 8.27, units = "in", dpi = 300)
+
+
+
+```
+
+
+```{r}
+##========================== hypothetical 50% ==================================
+library(dplyr)
+library(purrr)
+
+# 设置假设值
+hypothetical_mean <- 0.5
+
+# 运行 t 检验 + 提取统计结果 + Holm 校正 + Cohen's d + APA 报告
+ttest_results <- proportion_data_cs %>%
+  group_by(dummy_room, dummy_counter) %>%
+  summarise(
+    n               = n(),
+    mean_percentage = mean(percentage, na.rm = TRUE),
+    sd_percentage   = sd(percentage, na.rm = TRUE),
+    t_test          = list(t.test(percentage, mu = hypothetical_mean)),
+    .groups         = "drop"
+  ) %>%
+  mutate(
+    t_value     = map_dbl(t_test, ~ .x$statistic),
+    p_value     = map_dbl(t_test, ~ .x$p.value),
+    conf_low    = map_dbl(t_test, ~ .x$conf.int[1]),
+    conf_high   = map_dbl(t_test, ~ .x$conf.int[2]),
+    p_adj_holm  = p.adjust(p_value, method = "holm"),
+    significant = ifelse(p_adj_holm < 0.05, "Yes", "No"),
+    
+    # 计算 Cohen's d： d = (M - mu) / SD
+    cohen_d     = (mean_percentage - hypothetical_mean) / sd_percentage,
+
+    # APA 风格句子生成
+    apa_report  = paste0(
+      "In the ", dummy_room, " condition (counter = ", dummy_counter, 
+      "), the mean percentage was ", round(mean_percentage, 2), 
+      " (SD = ", round(sd_percentage, 2), "), which was ",
+      ifelse(significant == "Yes", "significantly ", "not "),
+      "different from chance, t(", n - 1, ") = ", round(t_value, 2),
+      ", p_adj = ", format.pval(p_adj_holm, digits = 3, eps = .001),
+      ", 95% CI [", round(conf_low, 2), ", ", round(conf_high, 2), "], ",
+      "Cohen’s d = ", round(cohen_d, 2), "."
+    )
+  ) %>%
+  select(-t_test)
+
+# 打印 APA 风格句子
+ttest_results$apa_report %>% cat(sep = "\n\n")
+
+
+```
+
+# Instrumental Avoidance phase 
+
+```{r echo = FALSE}
+
+
+##========================== preprocessing data = ==============================
+
+excel_file <- '/Users/mac/Library/CloudStorage/Dropbox/Generalization_2402/2023-2024_GEN/2_Data_processing/Gen_Denoised data/5_questionnaire/handylib_2_questionnaire.xlsx'
+
+fear_sheet_name <- "block0"  # Replace with the actual sheet name
+
+# Read the data from the specified sheet
+fear_data <- read_excel(excel_file, sheet = fear_sheet_name)
+
+# dummy coded counterbalance
+fear_data <- fear_data %>%
+  mutate(dummy_counter = case_when(
+     CS == "stretching" ~ 0,
+     CS == "bending" ~ 1,
+    TRUE ~ NA_real_  # Handle unexpected values
+  ))
+# as factor
+fear_data $ dummy_room    <- factor(fear_data $ dummy_room, 
+                                    levels = c(0, 1, 2, 3, 4))
+fear_data $ dummy_counter <- factor(fear_data $ dummy_counter,
+                                    levels = c(0, 1))
+
+# Then subset to keep only 0 and 4
+fear_data <- fear_data[fear_data $ dummy_room %in% c(0, 4),]
+
+# Optional: Drop unused factor levels after subsetting
+fear_data $ dummy_room <- droplevels(fear_data $ dummy_room)
+
+```
+
+### pain-related fear 
+```{r echo = FALSE}
+##========================== model comparison ================================== 
+mod   <-  lmer(fearrating~ 1 + dummy_room * dummy_counter +  (1|ID), 
+               data = fear_data)
+mod.1 <-  lmer(fearrating~ 1 + dummy_room +  (1|ID), data = fear_data)
+
+anova(mod,mod.1)
+
+
+fear_split<- split(fear_data,fear_data $ dummy_room)
+
+# Mean and SD 
+mean_csp <- mean(fear_split $ '0' $ `fearrating`)
+
+sd_csp   <-   sd(fear_split $ '0' $ `fearrating`)
+
+mean_csm <- mean(fear_split $ '4' $ `fearrating`)  
+
+sd_csm   <-   sd(fear_split $ '4' $ `fearrating`)
+
+mean.sd <- round(data.frame(mean_csp,sd_csp,mean_csm,sd_csm),3)
+print(mean.sd)
+
+##========================== t.test ============================================
+result   <- t.test(fear_split $ '0' $ `fearrating`,
+                   fear_split $ '4' $ `fearrating`, 
+                   paired = TRUE)
+
+print(result)
+
+
+# cohen's dz 
+
+cohend<- cohen.d(fear_split$'0'$`fearrating`,
+                 fear_split$'4'$`fearrating`,
+                 pooled=TRUE,paired= TRUE,
+                 na.rm= TRUE, mu=0, hedges.correction= FALSE,
+                 conf.level=0.95,noncentral= FALSE,
+                 within=TRUE, subject= NA)
+print(cohend)
+
+
+##========================== plot ==============================================
+
+fear_data$room_types<- factor(fear_data$room_types,levels=c('CS+','CS-'))
+
+fig1d <- ggplot(fear_data, aes(x = factor(room_types), y = fearrating, group = factor(room_types))) +
+  geom_point(aes(colour = factor(room_types)), alpha = 0.1,show.legend = FALSE) +
+  scale_color_manual(values = c('grey','grey')) +
+  geom_line(aes(group = ID, colour = factor(room_types)), alpha = 0.5,show.legend = FALSE) +
+  stat_summary(fun = "mean", geom = "point", size = 0.8, position = position_dodge(width = 0.1)) +
+  stat_summary(fun = "mean", geom = "line", size = 1) +
+  stat_summary(fun.data = "mean_se", geom = "errorbar", width = 0.2, color = 'black',show.legend = FALSE) +
+  labs(x = "", y = 'Self-report Pain-releted Fear') + scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, 5)) +
+  scale_x_discrete(labels = c('CS+ room','CS- room')) +theme_classic()+ggtitle("D. ")+mytheme 
+
+ggsave("/Users/mac/Library/CloudStorage/Dropbox/Generalization_2402/2023-2024_GEN/4_resultplot/Counter/1D.png", plot = fig1d, width = 8.27, height = 8.27, units = "in", dpi = 300)
+
+
+```
+
+### pain expectancy
+
+```{r echo = FALSE}
+##======================== model comparison ====================================
+
+mod <- lmer(expectancy~ 1 + dummy_room*dummy_counter+  (1|ID), data = fear_data)
+
+mod.1 <- lmer(expectancy~ 1 + dummy_room+  (1|ID), data = fear_data)
+
+anova(mod, mod.1)
+
+##======================== t.test ==============================================
+# Mean and SD
+mean_csp <- mean(fear_split $ '0' $ `expectancy`)
+
+sd_csp   <-   sd(fear_split $ '0' $ `expectancy`)
+
+mean_csm <- mean(fear_split $ '4' $ `expectancy`)
+
+sd_csm   <-   sd(fear_split $ '4' $ `expectancy`)
+
+mean.sd  <- round(data.frame(mean_csp,sd_csp,mean_csm,sd_csm),3)
+
+print(mean.sd)
+
+# paired -simple T test
+t.test   <- t.test(fear_split $ '0' $ `expectancy`,
+                   fear_split $ '4' $ `expectancy`, 
+                   paired = TRUE)
+print(t.test)
+
+cohend   <- cohen.d( fear_split $ '0' $ `expectancy`,
+                     fear_split $ '4' $ `expectancy`,
+                     
+                     pooled=TRUE,paired= TRUE,
+                     na.rm= TRUE, mu=0, hedges.correction= FALSE,
+                     conf.level=0.95,noncentral= FALSE,
+                     within=TRUE, subject= NA)
+print(cohend)
+
+##======================== plot  ===============================================
+
+# plot 
+
+fear_data$room_types<- factor(fear_data$room_types,levels=c('CS+','CS-'))
+
+fig1e<- ggplot(fear_data, aes(x = factor(room_types), y = expectancy, group = factor(room_types))) +
+  geom_point(aes(colour = factor(room_types)), alpha = 0.1,show.legend = FALSE) +
+  scale_color_manual(values = c('grey','grey','grey','grey','grey')) +
+  geom_line(aes(group = ID, colour = factor(room_types)), alpha = 0.5,show.legend = FALSE) +
+  stat_summary(fun = "mean", geom = "point", size = 0.8, position = position_dodge(width = 0.1)) +
+  stat_summary(fun = "mean", geom = "line", size = 1) +
+  stat_summary(fun.data = "mean_se", geom = "errorbar", width = 0.2, color = 'black',show.legend = FALSE) +
+  labs(x = "", y = 'Self-report Pain-related fear') + scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, 5)) +
+  scale_x_discrete(labels = c('CS+ room','CS- room')) +theme_classic()+ggtitle("E. ")+mytheme 
+
+
+ggsave("/Users/mac/Library/CloudStorage/Dropbox/Generalization_2402/2023-2024_GEN/4_resultplot/Counter/1E.png", plot = fig1e, width = 8.27, height = 8.27, units = "in", dpi = 300)
+
+```
+
+### pupil dilation 
+```{r echo = FALSE}
+
+##======================== prepossessing data  =================================
+
+# read data 
+
+excel.file <- file.path("/Users/mac/Library/CloudStorage/Dropbox/",
+               "Generalization_2402/2023-2024_GEN/2_Data_processing/",
+               "Gen_Denoised data/2_Avoidance_data/p2_avo_eyetracking_mix.sav")
+
+avoid.pd <- read.spss(excel.file,to.data.frame = TRUE)
+
+# dummy coded label for data analysis 
+avoid.pd <- avoid.pd  %>% 
+  mutate(
+    
+    dummy_location = case_when(
+      cs_location == "CS+" ~ 0,
+      cs_location == "CS-" ~ 1,
+      TRUE ~ NA_real_  # Handle unexpected values
+    ),
+  
+    dummy_room = case_when(
+      cs_room == "CS+" ~ 0,
+      cs_room == "CS-" ~ 1,
+      TRUE ~ NA_real_
+    ),
+    
+    dummy_counter = case_when(
+      pain_us_location == "stretching" ~ 0,
+      pain_us_location == "bending   " ~ 1,  # Removed extra spaces
+      TRUE ~ NA_real_  # Handle unexpected values
+    )
+  )
+# factors 
+
+avoid.pd $ dummy_counter  <- as.factor(avoid.pd $ dummy_counter)
+avoid.pd $ dummy_room     <- as.factor(avoid.pd $ dummy_room)
+avoid.pd $ dummy_location <- as.factor(avoid.pd $ dummy_location)
+
+##==================== model comparison  =======================================
+
+mod   <- lmer(cs_pd ~ 1 +dummy_room * dummy_location * dummy_counter + 
+                (1|trial_number)+ (1+ dummy_location|id), data = avoid.pd)
+
+mod.1 <- lmer(cs_pd ~ 1 +dummy_room * dummy_location + (1|trial_number) + 
+                (1+ dummy_location|id), data = avoid.pd)
+
+anova(mod, mod.1)
+
+
+##======================== summary model  ======================================
+mod   <- lmer(cs_pd ~ 1 +dummy_room * dummy_location * dummy_counter + 
+                (1|trial_number)+ (1+ dummy_location|id), data = avoid.pd)
+
+# model 
+   summary(mod) 
+
+# Anova
+     anova(mod)  
+
+# effect size
+eta_squared(mod)
+
+##========================  post-hoc  ==========================================
+emmeans(mod, pairwise~ dummy_location | dummy_room, 
+        adjust="Holm",pbkrtest.limit = 4128)
+
+emmeans(mod,      pairwise~ dummy_room | dummy_counter, 
+        adjust="Holm",pbkrtest.limit = 4128)
+
+emmeans(mod, pairwise~ dummy_location | dummy_counter, 
+        adjust="Holm",pbkrtest.limit = 4128)
+
+cohen.d(avoid.pd $ cs_pd[avoid.pd $ dummy_room     == "0" & 
+                         avoid.pd $ dummy_location == "0"],
+        avoid.pd $ cs_pd[avoid.pd $ dummy_room     == "0" & 
+                         avoid.pd $ dummy_location == '1'],
+        
+        pooled=TRUE,paired= FALSE,
+        na.rm=TRUE, mu=0, hedges.correction=FALSE,
+        conf.level=0.95,noncentral= FALSE,
+        within=TRUE, subject=NA)
+
+ # cs- room: cs location 
+cohen.d(avoid.pd $ cs_pd[avoid.pd $ dummy_room     == "1" & 
+                         avoid.pd $ dummy_location == "0"],
+        avoid.pd $ cs_pd[avoid.pd $ dummy_room     == "1" &
+                         avoid.pd $ dummy_location == '1'],
+        
+        pooled=TRUE,paired= FALSE,
+        na.rm=TRUE, mu=0, hedges.correction=FALSE,
+        conf.level=0.95,noncentral= FALSE,
+        within=TRUE, subject=NA)
+
+# cs room * counter 
+
+# stretching
+cohen.d(avoid.pd $ cs_pd[avoid.pd $ dummy_counter  == '0' & 
+                         avoid.pd $ dummy_room     == "0"],
+        avoid.pd $ cs_pd[avoid.pd $ dummy_counter  == "0" & 
+                         avoid.pd $ dummy_room.    == "1"],
+        
+        pooled=TRUE,paired= FALSE,
+        na.rm=TRUE, mu=0, hedges.correction=FALSE,
+        conf.level=0.95,noncentral= FALSE,
+        within=TRUE, subject=NA)
+
+# bending 
+cohen.d(avoid.pd $ cs_pd[avoid.pd $ dummy_counter  == "1" &  
+                         avoid.pd $ dummy_room     == "0"],
+        avoid.pd $ cs_pd[avoid.pd $ dummy_counter  == '1' & 
+                         avoid.pd $ dummy_room     == "1"],
+        
+        pooled=TRUE,paired= FALSE,
+        na.rm=TRUE, mu=0, hedges.correction=FALSE,
+        conf.level=0.95,noncentral= FALSE,
+        within=TRUE, subject=NA)
+
+# cs location * counter
+
+# stretching
+cohen.d(avoid.pd $ cs_pd[avoid.pd $ dummy_counter  == '0' & 
+                         avoid.pd $ dummy_location == "0"],
+        avoid.pd $ cs_pd[avoid.pd $ dummy_counter  == "0" & 
+                         avoid.pd $ dummy_location == "1"],
+        
+        pooled=TRUE,paired= FALSE,
+        na.rm=TRUE, mu=0, hedges.correction=FALSE,
+        conf.level=0.95,noncentral= FALSE,
+        within=TRUE, subject=NA)
+
+# bending 
+cohen.d(avoid.pd $ cs_pd[avoid.pd $ dummy_counter  == "1" &  
+                         avoid.pd $ dummy_location == "0"],
+        avoid.pd $ cs_pd[avoid.pd $ dummy_counter  == '1' & 
+                         avoid.pd $ dummy_location == "1"],
+        
+        pooled=TRUE,paired= FALSE,
+        na.rm=TRUE, mu=0, hedges.correction=FALSE,
+        conf.level=0.95,noncentral= FALSE,
+        within=TRUE, subject=NA)
+
+
+##========================  effect plot  ======================================= 
+
+library(effects)
+
+eff    <- effect("dummy_room * dummy_location * dummy_counter", mod)
+
+# Convert effect object to a data frame for ggplot
+eff_df <- as.data.frame(eff)
+
+
+eff_df $ dummy_room <- factor(eff_df$dummy_room, levels = c('0','1'))
+
+eff_df $ dummy_location <- factor(eff_df$dummy_location, levels = c('0','1'))
+
+eff_df $ dummy_counter <- factor(eff_df$dummy_counter, levels = c("0",'1'))                                 
+
+# effect plot _  location * room 
+fig1f <- ggplot(eff_df, aes(x = dummy_location, y = fit, color = dummy_room)) +
+
+  geom_point(size = 3) +  # Add points for estimated effects
+  geom_line(aes(group = dummy_room), linewidth = 1) +  # Add lines connecting levels
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2) +  # Confidence intervals
+  
+ facet_wrap(~ dummy_counter, labeller = labeller(dummy_counter = counter_labels) ) +  # Wrap by dummy_counter
+   scale_x_discrete(labels = location_labels) +
+   scale_y_continuous(limits = c(-0.4,0.4), breaks = seq(-0.4, 0.4, by = 0.2)) +
+  labs(title = " ",
+       x = " ", y = "Pupil Dilation (Effect Estimate)") +
+  scale_color_manual(values = c("#D76364", "#496c88")) +  # Custom colors
+  theme_classic()+
+  theme(strip.text = element_text(size = 11, face = "bold"),
+   axis.title.y = element_text(size = 11, face = "bold"))+ 
+  mytheme
+
+
+ggsave("/Users/mac/Library/CloudStorage/Dropbox/Generalization_2402/2023-2024_GEN/4_resultplot/Counter/1F.png", plot = fig1f, width = 8.27, height = 8.27, units = "in", dpi = 300)
+
+```
+
+
+### urge to leave 
+
+```{r echo = FALSE}
+##========================  model comparison  ==================================
+mod   <- lmer(avoid~ 1 + dummy_room * dummy_counter+  (1|ID), data = fear_data)
+
+mod.1 <- lmer(avoid~ 1 + dummy_room+  (1|ID), data = fear_data)
+
+anova(mod, mod.1)
+
+##========================  summary model   ====================================
+
+# Mean and SD
+mean_csp <- mean(fear_split $ '0' $ `avoid`)
+
+sd_csp   <-   sd(fear_split $ '0' $ `avoid`)
+
+mean_csm <- mean(fear_split $ '4' $ `avoid`)
+
+sd_csm   <-   sd(fear_split $ '4' $ `avoid`)
+
+mean.sd  <- round(data.frame(mean_csp,sd_csp,mean_csm,sd_csm),3)
+
+print(mean.sd)
+
+# paired -simple T test
+t.test   <- t.test(fear_split $ '0' $ `avoid`,
+                   fear_split $ '4' $ `avoid`, 
+                   paired = TRUE)
+print(t.test)
+
+
+
+cohend   <- cohen.d( fear_split $ '0' $ `avoid`,
+                     fear_split $ '4' $ `avoid`,
+                     pooled=TRUE,paired= TRUE,
+                     na.rm= TRUE, mu=0, hedges.correction= FALSE,
+                     conf.level=0.95,noncentral= FALSE,
+                     within=TRUE, subject= NA)
+print(cohend)
+
+
+##========================  effect plot   ======================================
+
+
+fear_data$room_types<- factor(fear_data$room_types,levels=c('CS+','CS-'))
+
+fig2b<- ggplot(fear_data, aes(x = factor(room_types), y = avoid, group = factor(room_types))) +
+  geom_point(aes(colour = factor(room_types)), alpha = 0.1,show.legend = FALSE) +
+  scale_color_manual(values = c('grey','grey')) +
+  geom_line(aes(group = ID, colour = factor(room_types)), alpha = 0.5,show.legend = FALSE) +
+  stat_summary(fun = "mean", geom = "point", size = 0.8, position = position_dodge(width = 0.1)) +
+  stat_summary(fun = "mean", geom = "line", size = 1) +
+  stat_summary(fun.data = "mean_se", geom = "errorbar", width = 0.2, color = 'black',show.legend = FALSE) +
+  labs(x = "", y = 'Self-report Urge to Avoid') + scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, 5)) +
+  scale_x_discrete(labels = c('CS+ room','CS- room')) +theme_classic()+ggtitle("B. ")+mytheme 
+
+
+ggsave("/Users/mac/Library/CloudStorage/Dropbox/Generalization_2402/2023-2024_GEN/4_resultplot/Counter/2B.png", plot = fig2b, width = 8.27, height = 8.27, units = "in", dpi = 300)
+
+
+```
+
+
+### attention indices
+
+
+```{r echo = FALSE}
+##========================== preprocessing data  ===============================
+# read data 
+
+excel.file <- file.path("/Users/mac/Library/CloudStorage/Dropbox",
+                       "/Generalization_2402/2023-2024_GEN/2_Data_processing",
+                       "/Gen_Denoised data/2_Avoidance_data",
+                       "/p2_eyetracking_cs_counter_mix.sav")
+
+Avoid.pff <- read.spss(excel.file,to.data.frame = TRUE)
+
+
+
+#  dummy coded ID
+
+Avoid.pff <- Avoid.pff %>% mutate(
+  
+        dummy_location = case_when(
+           cs_location == "CS+" ~ 0,
+           cs_location == "CS-" ~ 1,
+        
+        # Handle unexpected values
+        TRUE ~ NA_real_ ),
+  
+            dummy_room = case_when(
+               cs_room == "CS+" ~ 0,
+               cs_room == "CS-" ~ 1,
+        TRUE ~ NA_real_ ),
+    
+         dummy_counter = case_when(
+      counterbalancing == "stretching"    ~ 0,
+      counterbalancing == "bending   "    ~ 1,
+        TRUE ~ NA_real_ ))
+
+
+
+# dummy_code ID 
+
+Avoid.pff $                  id <- factor(Avoid.pff $ id)
+Avoid.pff $          dummy_room <- factor(Avoid.pff $ dummy_room)
+Avoid.pff $      dummy_location <- factor(Avoid.pff $ dummy_location)
+Avoid.pff $ dummy_couterbalance <- factor(Avoid.pff $ dummy_counter)
+
+
+#  label
+
+room_labels     <- c("0" = "CS+ room",     "1" = "CS- room")
+
+location_labels <- c("0" = "CS+ location", "1" = " CS- location")
+
+counter_labels  <- c("0" = "Stretching",   "1" = "Bending")
+
+
+```
+
+
+```{r echo = FALSE}
+##========================== proportion——all trials ========================================
+
+library(dplyr)
+
+# Summarizing the number of trials per participant
+
+
+excel.file     <- file.path("/Users/mac/Library/CloudStorage/Dropbox",
+                       "/Generalization_2402/2023-2024_GEN/2_Data_processing",
+                       "/Gen_Denoised data/2_Avoidance_data",
+                       "/p2_eyetracking_cs_counter.sav")
+
+Avo.pff.sep    <- read.spss(excel.file,to.data.frame = TRUE)
+
+# a location without eye-tracking data coded as -1
+
+Avo_pff_sep_v2 <- subset(Avo.pff.sep, csp_tff >-1 |csm_tff > -1 )
+
+summary_trials <- Avo_pff_sep_v2 %>%
+                  group_by(id) %>%
+                  summarise(total_trials = n(), .groups = "drop")
+
+print(summary_trials)
+
+# merge this total_trials back into the grouped data while keeping the structure
+proportion_data <- Avoid.pff %>%
+  group_by(id, dummy_counter, dummy_room, dummy_location) %>%
+  summarise(
+    frequency = sum(cs_pff == 1, na.rm = TRUE),  
+    total_opportunity = 
+      first(summary_trials$total_trials[summary_trials$id == id]), 
+    # Assign total trials per participant
+    percentage = (frequency / total_opportunity),  # Calculate percentage
+    .groups = "drop"
+  )
+print(proportion_data)
+
+proportion_data $ dummy_counter  <- factor(proportion_data $ dummy_counter)
+proportion_data $ dummy_room     <- factor(proportion_data $ dummy_room)
+proportion_data $ dummy_location <- factor(proportion_data $ dummy_location)
+
+```
+
+ #### proportion CS-24 trials 
+
+```{r echo = FALSE}
+
+##========================== proportion——CS trials =============================
+
+library(plyr)
+library(dplyr)
+
+detach('package:plyr')
+
+# Compute total trials per (id, dummy_room)
+summary_trials_cs <- Avo_pff_sep_v2 %>%
+  group_by(id, cs_room) %>%
+  summarise(total_trials = n(), .groups = "drop")
+
+print(summary_trials_cs)
+summary_trials_cs $ id <- as.numeric(summary_trials_cs $ id)
+        Avoid.pff $ id <- as.numeric(        Avoid.pff $ id)
+
+Avoid_with_trials <- Avoid.pff %>%
+  left_join(summary_trials_cs, by = c("id","cs_room"))
+
+
+#  Group and summarise frequency and percentage
+proportion_data_cs <- Avoid_with_trials %>%
+  group_by(id, dummy_counter, dummy_room, dummy_location) %>%
+  summarise(
+    frequency = sum(cs_pff == 1, na.rm = TRUE),
+    total_opportunity = first(total_trials),  # already joined in!
+    percentage = frequency / total_opportunity,
+    .groups = "drop"
+  )
+print(proportion_data_cs)
+# Convert dummy variables to factors for modeling or plotting
+
+proportion_data_cs $ dummy_counter  <- factor(proportion_data_cs $ dummy_counter)
+proportion_data_cs $ dummy_room     <- factor(proportion_data_cs $ dummy_room)
+proportion_data_cs $ dummy_location <- factor(proportion_data_cs $ dummy_location)
+
+# Optional: Print the final data frame
+print(proportion_data_cs)
+
+
+```
+__missing trial__
+
+
+
+```{r echo = FALSE}
+##========================== model comparsion ==================================
+# two-way: room* location
+mod.1 <- glm(
+  cbind(frequency, total_opportunity - frequency) ~ 
+    dummy_room * dummy_location,
+  data = proportion_data_cs,
+  family = "binomial"
+)
+
+# counter as a between-subject factor
+mod.2 <- glm(
+  cbind(frequency, total_opportunity - frequency) ~ 
+    dummy_counter + dummy_room * dummy_location,
+  data = proportion_data_cs,
+  family = "binomial"
+)
+
+# three-way interaction 
+mod.3 <- glm(
+  cbind(frequency, total_opportunity - frequency) ~ 
+    dummy_counter * dummy_room * dummy_location,
+  data = proportion_data_cs,
+  family = "binomial"
+)
+
+anova(mod.1,mod.2,mod.3)
+
+##========================== summary model =====================================
+
+mod.3 <- glm(
+  cbind(frequency, total_opportunity - frequency) ~ 
+    dummy_counter * dummy_room * dummy_location,
+  data = proportion_data_cs,
+  family = "binomial"
+)
+
+PFF.summary <- summary (mod.3)
+
+PFF.anova   <-  Anova (mod.3, type = 3)
+
+print(PFF.anova)
+
+# table of estimates with 95% CI
+se <- sqrt(diag(vcov(mod.3)))  # 标准误
+(PFF.effect   <- cbind(
+   Est = coef(mod.3),
+    LL = coef(mod.3) - 1.96 * se,
+    UL = coef(mod.3) + 1.96 * se
+))
+
+exp(PFF.effect)
+
+
+##======================== post-hoc ============================================
+
+emmeans(mod.3, pairwise~ dummy_location| dummy_counter, adjust = "Holm", 
+        pbkrtest.limit = 4128)
+cohen.d(proportion_data_cs $ percentage[proportion_data_cs $ dummy_counter  == '0' & 
+        proportion_data_cs $ dummy_location   == "0"],
+        proportion_data_cs $ percentage[proportion_data_cs $ dummy_counter  == "0" & 
+        proportion_data_cs $ dummy_location   == "1"],
+        
+        pooled=TRUE,paired= FALSE,
+        na.rm=TRUE, mu=0, hedges.correction=FALSE,
+        conf.level=0.95,noncentral= FALSE,
+        within=TRUE, subject=NA)
+  
+cohen.d(proportion_data_cs $ percentage[proportion_data_cs $ dummy_counter  == '1' & 
+        proportion_data_cs $ dummy_location   == "0"],
+        proportion_data_cs $ percentage[proportion_data_cs $ dummy_counter  == "1" & 
+        proportion_data_cs $ dummy_location   == "1"],
+        
+        pooled=TRUE,paired= FALSE,
+        na.rm=TRUE, mu=0, hedges.correction=FALSE,
+        conf.level=0.95,noncentral= FALSE,
+        within=TRUE, subject=NA)
+
+##========================  plot ===============================================
+
+library(effects)
+
+eff    <- effect("dummy_counter *dummy_room*dummy_location", mod.3)
+
+# Convert effect object to a data frame for ggplot
+eff_df <- as.data.frame(eff)
+
+
+eff_df $ dummy_room     <- factor(eff_df$dummy_room, levels = c('0','1'))
+eff_df $ dummy_location <- factor(eff_df$dummy_location, levels = c('0','1'))
+eff_df $ dummy_counter  <- factor(eff_df$dummy_counter, levels = c("0",'1'))                                 
+
+# effect plot _  location * room 
+fig3b <- ggplot(eff_df, aes(x = dummy_location, y = fit, color = dummy_room)) +
+
+  geom_point(size = 3) +  # Add points for estimated effects
+  geom_line(aes(group = dummy_room), linewidth = 1) +  # Add lines connecting levels
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2) +  # Confidence intervals
+  
+# Wrap by dummy_counter
+facet_wrap(~ dummy_counter, labeller = labeller(dummy_counter = counter_labels)) + 
+   scale_x_discrete(labels = location_labels) +
+   scale_y_continuous(limits = c(0,1), breaks = seq(0,1, by = 0.25)) +
+  labs(title = " ",
+       x = " ", y = "Proportion of First Fixation \n (Effect Estimate)") +
+  scale_color_manual(values = c("#D76364", "#496c88")) +  # Custom colors
+  theme_classic()+
+  theme(strip.text = element_text(size = 14, face = "bold"),
+   axis.title.y = element_text(size = 11, face = "bold"))+ 
+  mytheme
+
+
+
+ggsave("/Users/mac/Library/CloudStorage/Dropbox/Generalization_2402/2023-2024_GEN/4_resultplot/Counter/3B.png", plot = fig3b, width = 8.27, height = 8.27, units = "in", dpi = 300)
+
+
+##========================== hypothetical 50% ==================================
+
+library(dplyr)
+
+hypothetical_mean<- 0.5 
+
+# build data.frame
+
+check50<- data.frame(proportion_data_cs)
+
+
+check50 $ hypothetical_mean<- as.numeric(rep("0.5", times = 210))
+
+# Clean version of your setup
+check50 <- proportion_data_cs %>%
+  mutate(hypothetical_mean = 0.5) %>%
+  group_by(dummy_counter, dummy_room, dummy_location)
+
+print(check50)
+
+# compare stretching CS+ room vs. 0.5 
+
+ttest_results <- check50 %>%
+  group_by(dummy_room) %>%
+  summarise(
+    n = n(),
+    mean_percentage = mean(percentage, na.rm = TRUE),
+    t_test = list(t.test(percentage, mu = 0.5)),
+    t_value = t_test[[1]]$statistic,
+    p_value = t_test[[1]]$p.value,
+    conf_low = t_test[[1]]$conf.int[1],
+    conf_high = t_test[[1]]$conf.int[2]
+  )
+
+# compare bending CS + room vs. 0.5 
+
+
+```
+
+### avoidance behavior
+ 
+```{r echo = FALSE}
+
+##========================== preprocessing data ================================
+
+excel.file <- file.path("/Users/mac/Library/CloudStorage/Dropbox",
+                       "/Generalization_2402/2023-2024_GEN/2_Data_processing",
+                       "/Gen_Denoised data/2_Avoidance_data",
+                       "/p2_instrumental_avoid_60.sav")
+
+Avoid <- read.spss(excel.file,to.data.frame = TRUE)
+
+# room1 = 1, participants enter into a room but do not open the bookcase door 
+
+
+Avoid  <- Avoid %>% 
+  mutate(dummy_room = case_when(
+            cs_room == "cs+" ~ 0,
+            cs_room == "cs-" ~ 1,
+    TRUE ~ NA_real_  # Assigns NA if the value does not match
+  ))
+
+
+
+Avoid   <- Avoid %>% 
+  mutate(dummy_counter = case_when(
+               pain_us == "stretching" ~ 0,
+               pain_us == "bending   " ~ 1,
+    TRUE ~ NA_real_  # Assigns NA if the value does not match
+  ))
+
+
+
+##========================== model comparison  =================================
+
+mod.1 <- glmer(
+   avoid ~ 1 + dummy_room * dummy_counter + (1 | trial_number) + (1 + cs_room| id),
+    data = Avoid,
+  family = binomial(link = "logit"),
+ control = glmerControl(optimizer = "bobyqa"),
+    nAGQ = 0
+)
+mod.2 <- glmer(
+  avoid ~ 1 + dummy_room + (1 | trial_number) + (1 + cs_room| id),
+   data = Avoid,
+ family = binomial(link = "logit"),
+control = glmerControl(optimizer = "bobyqa"),
+   nAGQ = 0
+)
+mod.3 <- glmer(
+  avoid ~ 1 + dummy_room + (1 | id),
+   data = Avoid,
+ family = binomial(link = "logit"),
+control = glmerControl(optimizer = "bobyqa"),
+   nAGQ = 0 
+) 
+
+anova(mod.1, mod.2, mod.3)
+
+##========================== summary model  =================================
+# CS- = 1 CS+ = 0; 
+Avoid $ dummy_room <- factor(Avoid $ dummy_room, levels =c('1','0'))
+
+mod.2<- glmer(avoid ~ 1 + dummy_room + (1 | trial_number) + (1 + cs_room | id),
+  data = Avoid,
+  family = binomial(link = "logit"),
+  control = glmerControl(optimizer = "bobyqa"),
+  nAGQ = 0
+)
+
+summary(mod.2)
+
+waldX2<- (7.41)^2
+
+print(waldX2)
+
+# [1] 65.12
+#odd ratio 
+# standard error 
+se <- sqrt(diag(vcov(mod.2)))
+# table of estimates with 95% CI
+(tab <- cbind(Est = fixef(mod.2), 
+              LL = fixef(mod.2) - 1.96 * se, 
+              UL = fixef(mod.2) + 1.96 * se))
+exp(tab)
+
+##========================== plot   ============================================
+#re-order CS location for plot: 
+
+Avoid_bar<- Avoid
+Avoid_bar$dummy_room<- factor(Avoid_bar$dummy_room,levels=c('0','1'))
+
+result <- aggregate(avoid ~ id + dummy_room, data = Avoid_bar, FUN = mean) 
+
+print(result)
+
+
+beh<- ggpredict(mod.2, terms = 'dummy_room')
+
+beh$x<- factor(beh$x, levels = c('0','1'))
+
+print(beh)
+
+fig4a<- ggplot(beh, aes(x, predicted)) + 
+  geom_point(size = 1.5) + 
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high),width = 0.2,
+                show.legend = FALSE) +
+   geom_point(aes(x= x,y= predicted), size=3, colour="red", shape=16, 
+              show.legend = F)+
+  geom_point(data = result, aes(x = dummy_room, y = avoid), 
+             position = position_jitter(width= 0.1), size= 2, 
+             shape= 16, alpha= 0.8,show.legend = F)+
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.5))+ ggtitle(" ")+ 
+  scale_x_discrete(labels = c('CS+ room','CS- room'))+
+  labs(x=" ", y="Probability of Avoidance")+
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25), 
+                     labels = c('0', '25%','50%','75%', '100%')) +
+  theme(axis.title.x = element_text(color ="black", size=12), 
+        axis.title.y= element_text(color="black", size =20))+
+  theme_classic()+
+  ggtitle("A. ")
+  theme(legend.position ="",
+        panel.grid = element_blank())+
+  theme(axis.title.x = element_text(color ="black", size=12),
+        axis.title.y= element_text(color="black", size =12),
+        axis.text = element_text(color ="black", size = 12))+
+  theme(plot.title = element_text(hjust = 0)) + mytheme
+
+ggsave("/Users/mac/Library/CloudStorage/Dropbox/Generalization_2402/2023-2024_GEN/4_resultplot/Counter/4A.png", plot = fig4a, width = 11.69, height = 11.69, units = "in", dpi = 300)
+```
+
+# Generalization phase 
+
+
+```{r echo = FALSE}
+##========================== preprocessing data ================================
+library(readxl)
+library(dplyr)
+
+# read data :
+excel_file <- '/Users/mac/Library/CloudStorage/Dropbox/Generalization_2402/2023-2024_GEN/2_Data_processing/Gen_Denoised data/5_questionnaire/handylib_2_questionnaire.xlsx'
+
+# 定义所有 sheet 名称
+fear_sheets <- c("block0", "block1", "block2", "block3")
+
+# 读取所有 sheet 并合并
+Gen_3block  <- bind_rows(
+  lapply(fear_sheets, function(sheet) {
+          df <- read_excel(excel_file, sheet = sheet)
+    df$block <- sheet  # 添加列 `block` 记录数据来源
+    return(df)
+  })
+)
+
+# 查看合并后的数据
+print(Gen_3block)
+
+
+# as factor
+
+Gen_3block <- Gen_3block  %>%
+  mutate(
+    dummy_counter = case_when(
+       CS == "stretching"  ~ 0,
+       CS == "bending" ~ 1,
+    )
+  )
+Gen_3block <- Gen_3block  %>%
+  mutate(
+    dummy_block = case_when(
+      block == "block0"  ~ 0,
+      block == "block1"  ~ 1,
+      block == "block2"  ~ 2,
+      block == "block3"  ~ 3,
+      
+      
+    )
+  )
+Gen_3block $ dummy_room    <- factor(Gen_3block $ dummy_room,                                  
+                                    levels = c(0, 1, 2, 3, 4))
+Gen_3block $ dummy_block   <- factor(Gen_3block $ dummy_block, 
+                                    levels = c(0, 1, 2, 3))
+Gen_3block $ dummy_counter <- factor(Gen_3block $ dummy_counter,
+                                    levels = c(0, 1))
+Gen_3block $ ID            <- factor(Gen_3block $ ID )
+
+
+```
+
+### fear of pain
+
+```{r echo = FALSE}
+
+##========================== model comparison ==================================
+
+mod   <-   lmer(fearrating ~ 1 + dummy_room * dummy_counter * dummy_block 
+                + (1|ID), data = Gen_3block)
+mod.1 <-   lmer(fearrating ~ 1 + dummy_room * dummy_block   + (1|ID), 
+                data = Gen_3block )
+mod.2 <-   lmer(fearrating ~ 1 + dummy_room * dummy_counter +  (1|ID), 
+                data = Gen_3block )
+mod.3 <-   lmer(fearrating ~ 1 + dummy_room +  (1|ID),
+                data = Gen_3block)
+
+anova(mod, mod.1,mod.2, mod.3)
+
+anova(mod.1)
+
+eta_squared(mod.1)
+
+# check distribution of residual 
+plot(mod.1)
+qqnorm(resid(mod.1)); qqline(resid(mod.1))
+
+# pairwise comparison
+emmeans(mod.1, pairwise~ dummy_room|dummy_block, 
+        adjust="Holm",pbkrtest.limit = 3600) 
+
+##========================== exam linear trend =================================
+
+# Estimate marginal means for the interaction between room and block
+# Apply Holm-Bonferroni correction for multiple comparisons
+
+emm <- emmeans(mod.1, specs = ~ dummy_room:dummy_block , adjust = 'Holm')
+
+#  weight room for each trend 
+linear_contrast <- c(0,-1,-2,-3,-4)
+
+#linear_contrast <- c(2, 1, 0, -1, -2)
+# quadratic trend: U-shape (middle lower)
+quadratic_contrast <- c(2, -1, -2, -1, 2)
+
+
+# Check the linear trend of room types within blocks
+# Apply Holm-Bonferroni correction for multiple comparisons
+contrast_results <- contrast(emm, 
+  method = list(
+    "Linear Trend" = linear_contrast,
+    "Quadratic Trend" = quadratic_contrast
+  ),
+  by = "dummy_block",
+  adjust = "holm"
+)
+
+
+summary(contrast_results)
+
+plot(contrast_results)
+
+# linear trend
+
+emm_df <- as.data.frame(emm)
+
+slopes <- emm_df %>%
+  group_by(dummy_block) %>%
+  summarize(slope = coef(lm(emmean ~ as.numeric(dummy_room)))[2])
+
+
+##========================== plot data ========================================
+room1_labels <- c("0" = "CS+ room", "1" = "GS1 room", "2" = "GS2 room", 
+                  "3" = "GS3 room", "4" = "CS- room")
+
+library(RColorBrewer)
+
+# 使用 RColorBrewer 提供的 Set3 调色板
+fig1g <- ggplot(Gen_3block, aes(x = factor(dummy_room), y = fearrating, color = factor(block), group = factor(block))) +
+  scale_color_brewer(palette = "Set2") +  # 按 block 分配颜色
+  stat_summary(fun = "mean", geom = "point", size = 0.8, position = position_dodge(width = 0)) +
+  stat_summary(fun = "mean", geom = "line", size = 1.5) +
+  stat_summary(fun.data = "mean_se", geom = "errorbar", width = 0.2, color = 'black', show.legend = FALSE) +
+  labs(x = "", y = 'Self-report Pain-related Fear', color = "Block") +  # 显示 Block 颜色
+  scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, 5)) +
+  scale_x_discrete(labels = room1_labels) +
+  theme_classic() + ggtitle("G.") + mytheme
+
+ggsave("/Users/mac/Library/CloudStorage/Dropbox/Generalization_2402/2023-2024_GEN/4_resultplot/Counter/1G.png", plot = fig1g, width = 8.27, height = 8.27, units = "in", dpi = 300)
+
+```
+
+
+whats### pain expectancy 
+
+```{r echo = FALSE}
+##========================== model comparision ================================
+mod   <-  lmer(expectancy ~ 1 + dummy_room * dummy_counter * dummy_block +(1|ID),
+               data = Gen_3block)
+mod.1 <-  lmer(expectancy ~ 1 + dummy_room * dummy_block   +  (1|ID), 
+              data = Gen_3block)
+mod.2 <-  lmer(expectancy ~ 1 + dummy_room * dummy_counter +  (1|ID), 
+               data = Gen_3block)
+mod.3 <-  lmer(expectancy ~ 1 + dummy_room + (1|ID), 
+               data = Gen_3block)
+
+anova(mod,mod.1,mod.2, mod.3)
+
+##========================== summary model =====================================
+anova(mod.1)
+eta_squared(mod.1)
+
+emmeans(mod.1, pairwise~ dummy_room|dummy_block, adjust="Holm",
+        pbkrtest.limit = 3600) 
+
+##========================== exam linear trend =================================
+
+# Estimate marginal means for the interaction between room and block
+# Apply Holm-Bonferroni correction for multiple comparisons
+
+
+
+emm <- emmeans(mod.1, specs = ~ dummy_room:dummy_block , adjust = 'Holm')
+
+# Weight the room
+# Use the CS+ room as the baseline
+# The coding indicates the effect of distance from the CS+ room on fear ratings
+linear_contrast <- c(0,-1,-2,-3,-4) 
+
+# Check the linear trend of room types within blocks
+# Apply Holm-Bonferroni correction for multiple comparisons
+contrast_results <- contrast(emm, 
+                            method = list("Linear Trend" = linear_contrast),
+                            by = "dummy_block", adjust = 'Holm')
+
+
+print(contrast_results)
+
+##========================== plot ==============================================
+room1_labels <- c("0" = "CS+ room", "1" = "GS1 room", "2" = "GS2 room", 
+                  "3" = "GS3 room", "4" = "CS- room")
+
+library(RColorBrewer)
+
+# 使用 RColorBrewer 提供的 Set3 调色板
+fig1h <- ggplot(Gen_3block, aes(x = factor(dummy_room), y = expectancy, 
+                       color = factor(block), group = factor(block))) +
+  scale_color_brewer(palette = "Set2") +  # 按 block 分配颜色
+  stat_summary(fun = "mean", geom = "point", size = 0.8,
+               position = position_dodge(width = 0)) +
+  stat_summary(fun = "mean", geom = "line", size = 1.5) +
+  stat_summary(fun.data = "mean_se", geom = "errorbar", 
+               width = 0.2, color = 'black', show.legend = FALSE) +
+  labs(x = "", y = 'Self-report Pain Expectancy', color = "Block") + 
+  scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, 5)) +
+  scale_x_discrete(labels = room1_labels) +
+  theme_classic() + ggtitle("H.") + mytheme
+
+
+ggsave("/Users/mac/Library/CloudStorage/Dropbox/Generalization_2402/2023-2024_GEN/4_resultplot/Counter/1H.png", plot = fig1h, width = 8.27, height = 8.27, units = "in", dpi = 300)
+
+```
+
+
+### urge to avoid
+
+
+```{r echo = FALSE}
+##========================== model comparision ================================
+
+mod   <-  lmer(avoid ~ 1 + dummy_room * dummy_counter * dummy_block +  (1|ID), 
+               data = Gen_3block)
+mod.1 <-  lmer(avoid ~ 1 + dummy_room *   dummy_block +  (1|ID), 
+               data = Gen_3block)
+mod.2 <-  lmer(avoid ~ 1 + dummy_room * dummy_counter +  (1|ID), 
+               data = Gen_3block)
+mod.3 <-  lmer(avoid ~ 1 + dummy_room + (1|ID), 
+               data = Gen_3block)
+
+anova(mod,mod.1,mod.2, mod.3)
+
+anova(mod.1)
+
+eta_squared(mod.1)
+##========================== summary model =====================================
+emmeans(mod.1, pairwise~ dummy_room|dummy_block, adjust="Holm",
+        pbkrtest.limit = 3600) 
+
+
+##========================== exam linear trend =================================
+
+# Estimate marginal means for the interaction between room and block
+# Apply Holm-Bonferroni correction for multiple comparisons
+emm <- emmeans(mod.1, specs = ~ dummy_room:dummy_block , adjust = 'Holm')
+
+# Weight the room
+# Use the CS+ room as the baseline
+# The coding indicates the effect of distance from the CS+ room on fear ratings
+linear_contrast <- c(0,-1,-2,-3,-4) 
+
+# Check the linear trend of room types within blocks
+# Apply Holm-Bonferroni correction for multiple comparisons
+contrast_results <- contrast(emm, 
+                            method = list("Linear Trend" = linear_contrast),
+                            by = "dummy_block", adjust = 'Holm')
+
+
+print(contrast_results)
+
+
+
+
+
+##========================== plot ==============================================
+room1_labels <- c("0" = "CS+ room", "1" = "GS1 room", "2" = "GS2 room",
+                  "3" = "GS3 room", "4" = "CS- room")
+
+library(RColorBrewer)
+
+# 使用 RColorBrewer 提供的 Set3 调色板
+fig2c<- ggplot(Gen_3block, aes(x = factor(dummy_room), y = avoid, color = factor(block), group = factor(block))) +
+  scale_color_brewer(palette = "Set2") +  # 按 block 分配颜色
+  stat_summary(fun = "mean", geom = "point", size = 0.8, position = position_dodge(width = 0)) +
+  stat_summary(fun = "mean", geom = "line", size = 1.5) +
+  stat_summary(fun.data = "mean_se", geom = "errorbar", width = 0.2, color = 'black', show.legend = FALSE) +
+  labs(x = "", y = 'Self-report Urge to Avoid', color = "Block") +  # 显示 Block 颜色
+  scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, 5)) +
+  scale_x_discrete(labels = room1_labels) +
+  theme_classic() + ggtitle("C.") + mytheme
+
+ggsave("/Users/mac/Library/CloudStorage/Dropbox/Generalization_2402/2023-2024_GEN/4_resultplot/Counter/2C.png", plot = fig2c, width = 8.27, height = 8.27, units = "in", dpi = 300)
+
+```
+
+###  pupil dilation 
+```{r echo = FALSE}
+##======================== preprocessing data  =================================
+excel.file <- file.path("/Users/mac/Library/CloudStorage/Dropbox",
+                       "/Generalization_2402/2023-2024_GEN/2_Data_processing",
+                       "/Gen_Denoised data/",
+                       "3_Generalization_data/p3_eyetracking_pff_mix.sav")
+
+Gen_3block_pff <- read.spss(excel.file, to.data.frame = TRUE)
+
+  
+library(dplyr)
+
+Gen_3block_pff <- Gen_3block_pff %>% 
+  mutate(
+    dummy_allloca = case_when(
+      csp_location == "CS+"  ~ 0,
+      csp_location == "G1 "  ~ 1,  # Removed extra space
+      csp_location == "G3 "  ~ 2,  # Removed extra space
+      csp_location == "CS-"  ~ 3,
+      TRUE ~ NA_real_  # Handle unexpected values
+    ),
+    
+    dummy_location = case_when(
+      csp_location == "CS+"  ~ 0,
+      csp_location == "G1 "  ~ 0,  
+      csp_location == "G3 "  ~ 1, 
+      csp_location == "CS-"  ~ 1,
+      TRUE ~ NA_real_
+    ),
+    
+    dummy_room = case_when(
+      types_room == "CS+"   ~ 0,
+      types_room == "G1 "   ~ 1,  
+      types_room == "G2 "   ~ 2,  
+      types_room == "G3 "   ~ 3,  
+      types_room == "CS-"   ~ 4,
+      TRUE ~ NA_real_
+    ),
+    
+    dummy_counter = case_when(
+      pain_us_location == "stretching" ~ 0,
+      pain_us_location == "bending   "    ~ 1,  # Removed extra spaces
+      TRUE ~ NA_real_  # Handle unexpected values
+    )
+  
+  )
+
+# remove missing data: ff = '' G2
+# Gen_3block_pff <- Gen_3block_pff %>%
+#  filter(ff != '', !is.na(ff))
+
+# remove G2 room deal to the gaze icon set-up at the row 
+Gen_3block_pff <- subset(Gen_3block_pff,Gen_3block_pff $ dummy_room != '2')
+Gen_3block_pff $ dummy_room     <- factor(Gen_3block_pff $ dummy_room)
+Gen_3block_pff $ id             <- factor(Gen_3block_pff $ id)
+Gen_3block_pff $ dummy_location <- factor(Gen_3block_pff $ dummy_location)
+Gen_3block_pff $ dummy_counter  <- factor(Gen_3block_pff $ dummy_counter)
+Gen_3block_pff $ block          <- factor(Gen_3block_pff $ block)
+Gen_3block_pff $ dummy_allloca  <- factor(Gen_3block_pff $ dummy_allloca)
+#  label
+
+block_labels    <- c('0' = "Block 0","1" = "Block 1", "2" = "Block 2", 
+                     "4" = "Block 3")
+
+room_labels     <- c("0" = "CS+ ", "1" = "GS1 ", "3" = "GS3 ", 
+                     "4" = "CS- ")
+
+location_labels <- c("0" = "CS+ & GS1", "1" = "GS3 & CS-")
+
+all_labels      <- c("0" = "CS+ ", "1" = "GS1 ", 
+                     "2" = "GS3 ", "3" = "CS- ")
+
+counter_labels  <- c("0" = "Stretching", "1" = "Bending")
+
+```
+
+ #### location pain-related location (CS+ location and GS1 location) vs. safe location (GS3 location and CS- location)
+
+```{r echo = FALSE}
+
+##======================== model comparison  ===================================
+
+mod.1  <- lmer(cs_pd ~ 1 + dummy_location * dummy_room * dummy_counter * block + 
+                  (1|trial_number)+ (1+ dummy_location|id), data = Gen_3block_pff)
+
+mod.2 <- lmer(cs_pd ~ 1 + dummy_location * dummy_room * block +
+                  (1|trial_number)+ (1+ dummy_location|id), 
+               data = Gen_3block_pff)
+
+mod.3 <-  lmer(cs_pd ~ 1 + dummy_location * dummy_room * dummy_counter +  
+                  (1|trial_number) + (1+ dummy_location|id), 
+                data = Gen_3block_pff)
+
+mod.4 <-  lmer(cs_pd ~ 1 + dummy_location * dummy_room + 
+                  (1|trial_number)+ (1+ dummy_location|id), 
+                   data = Gen_3block_pff)
+
+mod.5 <-  lmer(cs_pd ~ 1 + dummy_location * dummy_room * dummy_counter + (1|id),
+               data = Gen_3block_pff)
+
+anova(mod.1,mod.2,mod.3, mod.4, mod.5)
+
+
+
+
+##======================== summary model =======================================
+    summary (mod.3)
+      anova (mod.3)
+eta_squared (mod.3)
+
+    summary (mod.2)
+
+##======================== post-hoc  ===========================================
+emmeans(mod.3, pairwise ~ dummy_location|dummy_room, adjust="Holm",
+        pbkrtest.limit  = 6533) 
+emmeans(mod.3, pairwise ~ dummy_location|dummy_counter, adjust="Holm",
+        pbkrtest.limit  = 6533) 
+emmeans(mod.3, pairwise ~ dummy_room|dummy_counter, adjust="Holm",
+        pbkrtest.limit  = 6533) 
+
+
+##======================== plot  ===============================================
+
+library(effects)
+
+eff    <- effect("dummy_location * dummy_room * dummy_counter", mod.3)
+
+# Convert effect object to a data frame for ggplot
+eff_df <- as.data.frame(eff)
+
+
+eff_df $ dummy_room     <- factor(eff_df $ dummy_room,    
+                                  levels = c('0','1','3','4'))
+eff_df $ dummy_location <- factor(eff_df $ dummy_location, 
+                                  levels = c('0','1'))
+eff_df $ dummy_counter  <- factor(eff_df $ dummy_counter, 
+                                  levels = c("0",'1'))                                 
+
+# effect plot _  location * room 
+fig1i <- ggplot(eff_df, aes(x = dummy_location, y = fit, color = factor(dummy_room))) +
+
+  geom_point(size = 3) +  # Add points for estimated effects
+  geom_line(aes(group = dummy_room), linewidth = 1) +  # Add lines connecting levels
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2) +  # Confidence intervals
+  
+ facet_wrap(~ dummy_counter, labeller = labeller(dummy_counter = counter_labels) ) +
+   scale_x_discrete(labels = location_labels) +
+   scale_y_continuous(limits = c(-0.4,0.4), breaks = seq(-0.4, 0.4, by = 0.2)) +
+   scale_color_brewer(name = "Room type", palette = "Set2", labels = room_labels)+
+  labs(title = " ",
+       x = " Location type ", y = "Pupil Dilation (Effect Estimate)") +
+  theme_classic()+
+  theme(strip.text = element_text(size = 16, face = "bold"),
+   axis.title.y = element_text(size = 11, face = "bold"),
+   axis.text.x = element_text(size = 11))+
+   mytheme
+
+ggsave("/Users/mac/Library/CloudStorage/Dropbox/Generalization_2402/2023-2024_GEN/4_resultplot/Counter/1I.png", plot = fig1i, width = 8.27, height = 8.27, units = "in", dpi = 300)
+
+```
+
+
+mod.3: cs_pd ~ 1 + dummy_room * dummy_location * dummy_counter + (1 | id)
+
+Why we choose model 3
+Lowest AIC (1372) and BIC (1428).
+Log-likelihood (-676) is much better than mod.4 (-900).
+Adding more parameters (mod.1) only slightly improves log-likelihood (-665 vs. -676) but increases complexity (26 parameters vs. 10).
+
+
+
+### attention index
+
+ #### proportion all blocks：60 trials
+
+```{r echo = FALSE}
+##======================== preprocessing data with block  =================================
+library(plyr)
+
+library(dplyr)
+
+detach('package:plyr')
+
+
+library(tidyr)
+
+
+excel.file <- file.path("/Users/mac/Library/CloudStorage/Dropbox",
+                       "/Generalization_2402/2023-2024_GEN/2_Data_processing",
+                       "/Gen_Denoised data/",
+                       "3_Generalization_data/p3_eyetracking_pff.sav")
+
+ Gen_v2 <- read.spss(excel.file,to.data.frame = TRUE)
+ 
+ Gen_v2 <- subset( Gen_v2, Gen_v2 $ types_room != 'G2 ')
+
+
+#  valid trials per person 
+summary_trials <- Gen_v2 %>%
+                  group_by(id, block) %>%
+                  summarise(total_trials = n(), .groups = "drop")
+
+summary_trials $ id <- as.numeric(summary_trials $ id)
+Gen_3block_pff $ id <- as.numeric(Gen_3block_pff $ id)
+summary_trials $ block <- as.numeric(summary_trials $ block)
+Gen_3block_pff $ block <- as.numeric(Gen_3block_pff $ block)
+
+ block_trials <- Gen_3block_pff %>%
+  left_join(summary_trials, by = c("id", "block"))
+
+print(summary_trials)
+
+## 
+proportion_data <- block_trials %>%
+   group_by(id, dummy_counter, dummy_room, dummy_location, block) %>%
+  summarise(
+    frequency = sum(ff == 1, na.rm = TRUE),  
+    total_opportunity = 
+      first(total_trials), 
+    # Assign total trials per participant
+    percentage = (frequency / total_opportunity),  # Calculate percentage
+    .groups = "drop"
+  )
+
+print(proportion_data)
+
+# fixed factors convert to factors 
+proportion_data $ dummy_room     <- factor(proportion_data $ dummy_room)
+proportion_data $ dummy_location <- factor(proportion_data $ dummy_location)
+proportion_data $ dummy_counter  <- factor(proportion_data $ dummy_counter)
+proportion_data $ block          <- factor(proportion_data $ block)
+
+##======================== model comparison    =================================
+mod.1 <- glm(
+  cbind(frequency, total_opportunity - frequency) ~ 
+    dummy_room * dummy_location * block *dummy_counter,
+  data = proportion_data,
+  family = "binomial"
+)
+
+# counter as a between-subject factor
+mod.2 <- glm(
+  cbind(frequency, total_opportunity - frequency) ~ 
+    dummy_counter* dummy_room * dummy_location,
+  data = proportion_data,
+  family = "binomial"
+)
+
+# three-way interaction 
+mod.3 <- glm(
+  cbind(frequency, total_opportunity - frequency) ~ 
+    block* dummy_room * dummy_location,
+  data = proportion_data,
+  family = "binomial"
+)
+mod.4 <- glm(
+  cbind(frequency, total_opportunity - frequency) ~ 
+    dummy_room * dummy_location,
+  data = proportion_data,
+  family = "binomial"
+)
+anova(mod.1,mod.2,mod.3, mod.4)
+
+##======================== check: block effects   =================================
+Anova(mod.1, type = 3)
+
+
+
+```
+no block effects thus remove block as a factor from the model 
+
+```{r}
+##======================== preprocessing data _ without block  =================================
+
+
+#  valid trials per person 
+summary_trials <- Gen_v2 %>%
+                  group_by(id) %>%
+                  summarise(total_trials = n(), .groups = "drop")
+
+print(summary_trials)
+
+## 48 = 60 -12(G2)
+proportion_data <- Gen_3block_pff %>%
+   group_by(id, dummy_counter, dummy_room, dummy_location) %>%
+  summarise(
+    frequency = sum(ff == 1, na.rm = TRUE),  
+    total_opportunity = 
+      first(summary_trials$total_trials[summary_trials$id == id]), 
+    # Assign total trials per participant
+    percentage = (frequency / total_opportunity),  # Calculate percentage
+    .groups = "drop"
+  )
+
+print(proportion_data)
+
+# fixed factors convert to factors 
+proportion_data $ dummy_room     <- factor(proportion_data $ dummy_room)
+proportion_data $ dummy_location <- factor(proportion_data $ dummy_location)
+proportion_data $ dummy_counter  <- factor(proportion_data $ dummy_counter)
+
+##======================== model comparison    =================================
+mod.1 <- glm(
+  cbind(frequency, total_opportunity - frequency) ~ 
+    dummy_room * dummy_location * dummy_counter,
+    data = proportion_data,
+   family = "binomial"
+)
+
+# counter as a between-subject factor
+mod.2 <- glm(
+  cbind(frequency, total_opportunity - frequency) ~ 
+    dummy_room * dummy_location,
+  data = proportion_data,
+  family = "binomial"
+)
+anova(mod.1,mod.2)
+
+```
+
+#####  location pain-related location vs. safe locations - glm 
+
+```{r echo = FALSE}
+
+##========================== summary model     =================================
+
+
+summary(mod.1)
+Anova  (mod.1, type = 3)
+
+emmeans(mod.1, pairwise~ dummy_location | dummy_room, adjust="Holm") 
+emmeans(mod.1, pairwise~ dummy_location | dummy_counter, adjust="Holm") 
+emmeans(mod.1, pairwise~ dummy_room | dummy_counter, adjust="Holm") 
+
+# pbkrtest.limit = 3891 only for lmer
+##============================ effect plot     =================================
+
+library(effects)
+
+eff <- effect('dummy_room * dummy_location * dummy_counter', mod.1)
+
+# Convert effect object to a data frame for ggplot
+eff_df <- as.data.frame(eff)
+
+eff_df $ dummy_room     <- factor(eff_df $ dummy_room, 
+                                  levels = c('0','1','3','4'))
+
+# cs+ & gs1 vs. cs- & gs3
+eff_df $ dummy_location <- factor(eff_df $ dummy_location, 
+                                  levels = c('0','1')) 
+eff_df $ dummy_counter  <- factor(eff_df $ dummy_counter, 
+                                  levels = c("0",'1'))                                 
+
+# effect plot _  location * room 
+ ggplot(eff_df, aes(x = dummy_location, y = fit, color = factor(dummy_room))) +
+  geom_point(size = 3) +  # Add points for estimated effects
+  geom_line(aes(group = dummy_room), linewidth = 1) +  # Add lines connecting levels
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2) +  # Confidence intervals
+ facet_wrap(~ dummy_counter, labeller = labeller(dummy_counter = counter_labels) ) +  # Wrap by dummy_counter
+   scale_x_discrete(labels = location_labels) +
+   scale_y_continuous(limits = c(0,1), breaks = seq(0, 1, by = 0.25)) +
+   scale_color_brewer(name = "Room type", palette = "Set2", labels = room_labels)+
+  labs(title = " ",
+       x = " Location type ", y = " Proportion of First Fixation \n (Effect Estimate)") +
+  theme_classic()+
+  theme(strip.text = element_text(size = 16, face = "bold"),
+   axis.title.y = element_text(size = 11, face = "bold"),
+   axis.text.x = element_text(size = 9))+
+   mytheme
+
+
+
+#ggsave("/Users/mac/Library/CloudStorage/Dropbox/HL/finial_paper/Revision/counter_plot/final_plot_1FF.png", plot = FF1, width = 8.27, height = 8.27, units = "in", dpi = 300)
+
+
+```
+
+#### proportion of each room types : 12 trials *3
+
+```{r echo = FALSE}
+##======================== preprocessing data with block  =================================
+ 
+#  valid trials per person 
+summary_trials <- Gen_v2 %>%
+                  group_by(id, block, types_room) %>%
+                  summarise(total_trials = n(), .groups = "drop")
+
+summary_trials $ id    <- as.numeric(summary_trials $ id)
+Gen_3block_pff $ id    <- as.numeric(Gen_3block_pff $ id)
+summary_trials $ block <- as.numeric(summary_trials $ block)
+Gen_3block_pff $ block <- as.numeric(Gen_3block_pff $ block)
+
+ block_trials <- Gen_3block_pff %>%
+  left_join(summary_trials, by = c("id", "block", "types_room"))
+
+print(summary_trials)
+
+## 
+proportion_data <- block_trials %>%
+   group_by(id, dummy_counter, dummy_room, dummy_location, block) %>%
+  summarise(
+    frequency = sum(ff == 1, na.rm = TRUE),  
+    total_opportunity = 
+      first(total_trials), 
+    # Assign total trials per participant
+    percentage = (frequency / total_opportunity),  # Calculate percentage
+    .groups = "drop"
+  )
+
+print(proportion_data)
+
+# fixed factors convert to factors 
+proportion_data $ dummy_room     <- factor(proportion_data $ dummy_room)
+proportion_data $ dummy_location <- factor(proportion_data $ dummy_location)
+proportion_data $ dummy_counter  <- factor(proportion_data $ dummy_counter)
+proportion_data $ block          <- factor(proportion_data $ block)
+
+##======================== model comparison    =================================
+mod.1 <- glm(
+  cbind(frequency, total_opportunity - frequency) ~ 
+    dummy_room * dummy_location * block *dummy_counter,
+  data = proportion_data,
+  family = "binomial"
+)
+
+# counter as a between-subject factor
+mod.2 <- glm(
+  cbind(frequency, total_opportunity - frequency) ~ 
+    dummy_counter* dummy_room * dummy_location,
+  data = proportion_data,
+  family = "binomial"
+)
+
+# three-way interaction 
+mod.3 <- glm(
+  cbind(frequency, total_opportunity - frequency) ~ 
+    block* dummy_room * dummy_location,
+  data = proportion_data,
+  family = "binomial"
+)
+mod.4 <- glm(
+  cbind(frequency, total_opportunity - frequency) ~ 
+    dummy_room * dummy_location,
+  data = proportion_data,
+  family = "binomial"
+)
+anova(mod.1,mod.2,mod.3, mod.4)
+
+##======================== check: block effects   ==============================
+Anova(mod.1, type = 3)
+
+
+
+```
+
+```{r}
+##======================== preprocessing data _ without block  =================
+
+#  valid trials per person 
+summary_trials <- Gen_v2 %>%
+                  group_by(id, types_room) %>%
+                  summarise(total_trials = n(), .groups = "drop")
+
+summary_trials $ id    <- as.numeric(summary_trials $ id)
+Gen_3block_pff $ id    <- as.numeric(Gen_3block_pff $ id)
+
+trials <- Gen_3block_pff %>%
+  left_join(summary_trials, by = c("id", "types_room"))
+
+print(summary_trials)
+
+## 
+proportion_data <- trials %>%
+   group_by(id, dummy_counter, dummy_room, dummy_location) %>%
+  summarise(
+    frequency = sum(ff == 1, na.rm = TRUE),  
+    total_opportunity = 
+      first(total_trials), 
+    # Assign total trials per participant
+    percentage = (frequency / total_opportunity),  # Calculate percentage
+    .groups = "drop"
+  )
+
+print(proportion_data)
+
+# fixed factors convert to factors 
+proportion_data $ dummy_room     <- factor(proportion_data $ dummy_room)
+proportion_data $ dummy_location <- factor(proportion_data $ dummy_location)
+proportion_data $ dummy_counter  <- factor(proportion_data $ dummy_counter)
+
+##======================== model comparison    =================================
+mod.1 <- glm(
+  cbind(frequency, total_opportunity - frequency) ~ 
+    dummy_room * dummy_location *dummy_counter,
+  data = proportion_data,
+  family = "binomial"
+)
+
+mod.2 <- glm(
+  cbind(frequency, total_opportunity - frequency) ~ 
+    dummy_room * dummy_location,
+  data = proportion_data,
+  family = "binomial"
+)
+anova(mod.1,mod.2)
+
+##======================== check: block effects   ==============================
+Anova(mod.1, type = 3)
+
+
+
+```
+
+#####  location pain-related location vs. safe locations - glm 
+
+```{r echo = FALSE}
+##========================== summary model     =================================
+
+
+summary(mod.1)
+Anova  (mod.1, type = 3)
+
+emmeans(mod.1, pairwise~ dummy_location | dummy_room, adjust="Holm") 
+emmeans(mod.1, pairwise~ dummy_location | dummy_counter, adjust="Holm") 
+emmeans(mod.1, pairwise~ dummy_room | dummy_counter, adjust="Holm") 
+
+# pbkrtest.limit = 3891 only for lmer
+##============================ effect plot     =================================
+
+library(effects)
+
+eff <- effect('dummy_room * dummy_location * dummy_counter', mod.1)
+
+# Convert effect object to a data frame for ggplot
+eff_df <- as.data.frame(eff)
+
+eff_df $ dummy_room     <- factor(eff_df $ dummy_room, 
+                                  levels = c('0','1','3','4'))
+
+# cs+ & gs1 vs. cs- & gs3
+eff_df $ dummy_location <- factor(eff_df $ dummy_location, 
+                                  levels = c('0','1')) 
+eff_df $ dummy_counter  <- factor(eff_df $ dummy_counter, 
+                                  levels = c("0",'1'))                                 
+
+# effect plot _  location * room 
+fig3c <-  ggplot(eff_df, aes(x = dummy_location, y = fit, color = factor(dummy_room))) +
+  geom_point(size = 3) +  # Add points for estimated effects
+  geom_line(aes(group = dummy_room), linewidth = 1) +  # Add lines connecting levels
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2) +  # Confidence intervals
+ facet_wrap(~ dummy_counter, labeller = labeller(dummy_counter = counter_labels) ) +  # Wrap by dummy_counter
+   scale_x_discrete(labels = location_labels) +
+   scale_y_continuous(limits = c(0,1), breaks = seq(0, 1, by = 0.25)) +
+   scale_color_brewer(name = "Room type", palette = "Set2", labels = room_labels)+
+  labs(title = " ",
+       x = " Location type ", y = " Proportion of First Fixation \n (Effect Estimate)") +
+  theme_classic()+
+  theme(strip.text = element_text(size = 16, face = "bold"),
+   axis.title.y = element_text(size = 11, face = "bold"),
+   axis.text.x = element_text(size = 9))+
+   mytheme
+
+
+
+ggsave("/Users/mac/Library/CloudStorage/Dropbox/Generalization_2402/2023-2024_GEN/4_resultplot/Counter/3C.png", plot = fig3c, width = 8.27, height = 8.27, units = "in", dpi = 300)
+
+
+```
+
+ 
+
+### avoidance 
+
+```{r}
+
+##======================== preprocessing data _ without block  =================
+
+Avoid_3block<-
+  read.spss(
+    '/Users/mac/Library/CloudStorage/Dropbox/Generalization_2402/2023-2024_GEN/2_Data_processing/Gen_Denoised data/3_Generalization_data/p3_avoid.sav',
+    to.data.frame = TRUE)
+
+Avoid_3block<- subset(Avoid_3block, steps_room1 !=1)
+
+Avoid_3block $ dummy_room <- factor(Avoid_3block $ dummy_room, 
+                                    level= c(4,3,2,1,0))
+Avoid_3block $ block      <- factor(Avoid_3block $ block, 
+                                    level= c(1,2,3))
+
+Avoid_3block <- Avoid_3block %>% 
+  mutate(dummy_counter = case_when(
+     pain_us == "stretching" ~ 0,
+     pain_us == "bending   " ~ 1,
+    TRUE ~ NA_real_  # Assigns NA if the value does not match
+  ))
+
+Avoid_3block$dummy_counter<- factor(Avoid_3block$dummy_counter)
+
+##======================== model comparison    =================================
+
+mod.1 <- glmer(
+  avoid ~ 1 + dummy_room * dummy_counter * block + (1 | trial_number) + (1 + dummy_room| id),
+                  data = Avoid_3block,
+                  family = binomial(link = "logit"),
+                  control = glmerControl(optimizer = "bobyqa"),
+                  nAGQ = 0)
+
+mod.2 <- glmer(
+  avoid ~ 1 + dummy_room * dummy_counter + (1 | trial_number) + (1 + dummy_room| id),
+                  data = Avoid_3block,
+                  family = binomial(link = "logit"),
+                  control = glmerControl(optimizer = "bobyqa"),
+                  nAGQ = 0)
+
+mod.3 <- glmer( avoid ~ 1 + dummy_room + (1 | trial_number) + (1 + dummy_room| id),
+                  data =  Avoid_3block, family = binomial,
+                  control = glmerControl(optimizer = "bobyqa"))
+
+mod.4 <- glmer( avoid ~ 1 + dummy_room + (1 | id), 
+                  data =  Avoid_3block, family = binomial,
+                 control = glmerControl(optimizer = "bobyqa"))
+
+anova(mod.1,mod.2,mod.3, mod.4)
+
+
+##========================== summary model     =================================
+library(car)
+summary(mod.3)
+Anova(mod.3, type = 3)
+
+waldX2.room0  <- (3944.85)^2
+print(waldX2.room0)
+
+waldX2.room1  <- (-2.16 )^2
+print(waldX2.room1)
+
+waldX2.room2  <- (-1969.21)^2
+print(waldX2.room2)
+
+
+# dummy_room2  -3.30215    0.00168 -1969.21   <2e-16 ***
+# dummy_room1  -4.28914    1.98677    -2.16    0.031 *  
+# [1] 65.12
+#odd ratio 
+# standard error 
+se <- sqrt(diag(vcov(mod.3)))
+# table of estimates with 95% CI
+(tab <- cbind(Est = fixef(mod.3), 
+              LL = fixef(mod.3) - 1.96 * se, 
+              UL = fixef(mod.3) + 1.96 * se))
+exp(tab)
+
+
+room_labels <- c("0" = "CS+", "1" = "GS1 ", "2" = "GS2 ", "3" = "GS3", "4" = "CS- ")
+library(effects)
+
+
+##============================ effect plot     =================================
+
+
+eff <- effect("dummy_room", mod.3)
+
+# Convert effect object to a data frame for ggplot
+eff_df <- as.data.frame(eff)
+
+check = summary(eff_df$fit)
+print(check)
+table(eff_df$dummy_room)
+
+eff_df$dummy_room <- factor(eff_df$dummy_room, levels = c('0','1','2','3','4'))
+#eff_df$dummy_counter <- factor(eff_df$dummy_counter, levels = c("0",'1'))                                 
+
+# effect plot _  location * room 
+fig4b <- ggplot(eff_df, aes(x = dummy_room, y = fit, color = factor(dummy_room))) +
+  geom_point(size = 3, show.legend = FALSE) +  # Add points for estimated effects
+  geom_line(aes(group = dummy_room), linewidth = 1,show.legend = FALSE)+  # Add lines connecting levels
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2,show.legend = FALSE) +  # Confidence intervals
+  #facet_wrap(~ dummy_counter, labeller = labeller(dummy_counter = counter_labels) ) +  # Wrap by dummy_counter
+     scale_x_discrete(labels = room_labels) +
+     scale_y_continuous(limits = c(-0.1,1), breaks = seq(0, 11, by = 0.25)) +
+    labs(title = " ",
+         x = " Room type", y = "Avoidance (Effect Estimate)") +
+    theme_classic()+
+    theme(strip.text = element_text(size = 16, face = "bold"),
+     axis.title.y = element_text(size = 11, face = "bold"),
+     axis.text.x = element_text(size = 11, face = "bold"),
+    axis.title.x = element_text(size = 11),
+    legend.position = "none")+
+     mytheme
+
+ggsave("/Users/mac/Library/CloudStorage/Dropbox/Generalization_2402/2023-2024_GEN/4_resultplot/Counter/4b.png", plot = fig4b, width = 8.27, height = 8.27, units = "in", dpi = 300)
+
+```
+
+
