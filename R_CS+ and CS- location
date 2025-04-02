@@ -1,0 +1,515 @@
+---
+title: "Handylib_S2_analysis_counter_CS+ and CS- location"
+author: 
+  - name: "H. Du"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: readable
+    css: style.css   # external CSS file for styling
+  pdf_document:
+    toc: true
+    number_sections: true
+    fontsize: 11pt         # Sets consistent font size
+    geometry: margin=1in   # 1-inch margins for PDFs
+    includes:
+      in_header: preamble.tex   # optional: if you want LaTeX tweaks like line spacing
+  word_document:
+    toc: true
+header-includes:
+  - \usepackage{float}  # Keeps figures from floating around in LaTeX output
+---
+
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+<!-- This first chunk define the global settings-->
+
+```{r, include = FALSE}
+
+# Setup global settings
+knitr::opts_chunk$set(message=FALSE, warning=FALSE)
+```
+
+
+```{r, include = FALSE}
+# Install packages (if needed)
+required_packages <- c("tidyr", "lubridate", "skimr", "ggplot2", 
+                       "naniar", "visdat", "esmtools","readxl","devtools",
+                       "sjstats","lmerTest","emmeans",'effsize','reshape2',
+                       "plyr","ggpubr","gridExtra","dplyr","ggnewscale")
+ #"ordinal
+
+for (package in required_packages) {
+    if (!require(package, character.only = TRUE, quietly = TRUE)) {
+        install.packages(package, dependencies = TRUE)
+    }
+}
+```
+
+```{r, include = FALSE}
+if (!require("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+
+# heatmap 
+BiocManager::install("ComplexHeatmap")
+devtools::install_github("jokergoo/colorRamp2")
+library(colorRamp2) # gradient color
+
+
+
+```
+
+```{r, include = FALSE}
+
+library(devtools)
+library(readxl)
+library(foreign)
+library(sjstats)   
+library(lmerTest)
+#library(ordinal)
+library(emmeans)
+library(effectsize) # package sjstats eta-square
+library(effects)
+library(effsize)
+library(ggplot2)
+library(reshape2)
+library(plyr)
+library(ggeffects)
+library(dplyr)
+library(rsq)
+library(scales)
+library(gridExtra)
+library(ggnewscale)
+library(ComplexHeatmap)
+library(car)
+
+
+```
+
+```{r,clear_environment, include = FALSE}
+# clear the environment
+rm(list = ls())
+
+```
+
+```{r, include = FALSE}
+# set-up theme for plots
+if(T){mytheme <- theme(plot.title = element_text(size = 12,color="black",hjust = 0),
+                       axis.title = element_text(size = 12,color ="black"), 
+                       axis.text = element_text(size= 12,color = "black"),
+                       panel.grid.minor.y = element_blank(),
+                       panel.grid.minor.x = element_blank(),
+                       legend.position = "right",
+                       legend.text = element_text(size= 12),
+                       legend.title= element_text(size= 12))}
+options(digits = 4) # control digits for all output 
+
+# color menu
+
+library(RColorBrewer)
+display.brewer.all()
+
+```
+
+# Pavlovian： counterbalancing 
+In this section, we analyze the confounder factor of counterbalancing factors.
+
+```{r fear_rating, include = FALSE}
+
+# dummy coded label for data analysis 
+
+room_labels <- c("0" = "CS+ room", "1" = "CS- room")
+
+location_labels <- c("0" = "CS+ location", "1" = " CS- location")
+
+counter_labels <- c("0" = "Stretching", "1" = "Bending")
+
+# Read data
+excel_file <- '/Users/mac/Library/CloudStorage/Dropbox/Generalization_2402/2023-2024_GEN/2_Data_processing/Gen_Denoised data/5_questionnaire/handylib_2_questionnaire.xlsx'
+
+# Specify the name of the sheet (sleet) you want to read
+fear_sheet_name <- "pav_question"  
+
+# Read the data from the specified sheet
+fear_data <- read_excel(excel_file, sheet = fear_sheet_name)
+
+# dummy_coded the fixed factors 
+fear_data <- fear_data %>% 
+  mutate(dummy_room = case_when(
+    cs_room == 'CS+' ~ 0, 
+    cs_room == 'CS-' ~ 1))
+fear_data <- fear_data %>% 
+  mutate(dummy_counter = case_when(
+    CS == 'stretching' ~ 0,
+    CS == 'bending' ~ 1))
+
+
+fear_data$dummy_counter       <- as.factor(fear_data$dummy_counter)
+fear_data$dummy_room          <- as.factor(fear_data$dummy_room)
+#fear_data$Pavlovian_fearrating <- ordered(fear_data$Pavlovian_fearrating)
+
+```
+
+
+### pain-related fear 
+
+There is no significant two-way interaction (cs_room * counterbalancing) on 
+pain-related fear rating; Therefore, the counterbalancing will be removed 
+from model
+
+```{r fear_rate_model, include=FALSE}
+##========================== model comparsion ==================================
+
+library(nlme) 
+
+# interaction： counter * room
+mod.1<- lme(Pavlovian_fearrating ~ dummy_counter*dummy_room, random = ~1 | ID,
+            data = fear_data)
+
+# main-effect of room type 
+mod.2<- lme(Pavlovian_fearrating ~ dummy_room, random = ~1 | ID, 
+            data = fear_data)
+
+anova(mod.1,mod.2)
+
+##======================== t.test ==============================================
+# subset data 
+fear_split<- split(fear_data,fear_data$cs_room)
+
+# Mean and SD 
+mean_csp <- mean(fear_split $ 'CS+' $ `Pavlovian_fearrating`)
+sd_csp   <-   sd(fear_split $ 'CS+' $ `Pavlovian_fearrating`)
+mean_csm <- mean(fear_split $ 'CS-' $ `Pavlovian_fearrating`)  
+sd_csm   <-   sd(fear_split $ 'CS-' $ `Pavlovian_fearrating`)
+
+mean.sd <- round(data.frame(mean_csp,sd_csp,mean_csm,sd_csm),3)
+print(mean.sd)
+
+# paired -simple T test
+result  <- t.test(fear_split $ 'CS+' $ `Pavlovian_fearrating`,
+                  fear_split $ 'CS-' $ `Pavlovian_fearrating`, paired = TRUE)
+
+print(result)
+
+# cohen's dz paired = True; 
+cohend  <- cohen.d(fear_split $ 'CS+' $ `Pavlovian_fearrating`,
+                   fear_split $ 'CS-' $ `Pavlovian_fearrating`,
+                   
+                 pooled=TRUE,paired= TRUE,
+                 na.rm= TRUE, mu=0, hedges.correction= FALSE,
+                 conf.level=0.95,noncentral= FALSE,
+                 within=TRUE, subject= NA)
+print(cohend)
+
+
+##========================  plot ==============================================
+
+
+# lines and error bar
+fear_data$cs_room<- factor(fear_data$cs_room,levels=c('CS+','CS-'))
+
+fig1a<- ggplot(fear_data, aes(x = factor(cs_room), y = Pavlovian_fearrating, 
+                      group = factor(cs_room))) +
+  
+  geom_point(aes(colour = factor(cs_room)), alpha = 0.1,show.legend = FALSE) +
+  scale_color_manual(values = c('grey','grey')) +
+  
+  geom_line(aes(group = ID, colour = factor(cs_room)), alpha = 0.5,
+            show.legend = FALSE) +
+  
+  stat_summary(fun = "mean", geom = "point", size = 0.8, 
+               position = position_dodge(width = 0.1)) +
+  
+  stat_summary(fun = "mean", geom = "line", size = 1) +
+  
+  stat_summary(fun.data = "mean_se", geom = "errorbar", 
+               width = 0.2, color = 'black',show.legend = FALSE) +
+ 
+   labs(x = "", y = 'Self-report Pain-releted Fear') + 
+  
+  scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, 5)) +
+  
+  scale_x_discrete(labels = c('CS+ room ','CS- room')) + 
+ 
+   theme_classic()+ggtitle("A. ")+mytheme 
+
+
+ggsave("/Users/mac/Library/CloudStorage/Dropbox/Generalization_2402/2023-2024_GEN/4_resultplot/Counter/1A.png", plot = fig1a, width = 8.27, height = 8.27, units = "in", dpi = 300)
+
+
+```
+
+### pain expectancy
+
+```{r echo = FALSE}
+##========================== model comparsion ==================================
+
+# interaction: counterbalancing * room 
+mod.1 <- lme(Pavlovian_painexpectancy ~ dummy_counter*dummy_room, 
+            random = ~1 | ID, data = fear_data)
+
+# main-effect of room 
+mod.2 <- lme(Pavlovian_painexpectancy  ~ dummy_room, 
+            random = ~1 | ID, data = fear_data)
+
+anova(mod.1,mod.2)
+
+##======================== t.test ==============================================
+# Mean and SD
+mean_csp <- mean(fear_split $ 'CS+' $ `Pavlovian_painexpectancy`)
+
+sd_csp   <-   sd(fear_split $ 'CS+' $ `Pavlovian_painexpectancy`)
+
+mean_csm <- mean(fear_split $ 'CS-' $ `Pavlovian_painexpectancy`)
+
+sd_csm   <-   sd(fear_split $ 'CS-' $ `Pavlovian_painexpectancy`)
+
+mean.sd  <- round(data.frame(mean_csp,sd_csp,mean_csm,sd_csm),3)
+
+print(mean.sd)
+
+# paired -simple T test
+t.test <- t.test(fear_split $ 'CS+' $ `Pavlovian_painexpectancy`,
+                 fear_split $ 'CS-' $ `Pavlovian_painexpectancy`, 
+                 paired = TRUE)
+print(t.test)
+
+# cohen's dz
+
+cohend <- cohen.d(fear_split $ 'CS+' $ `Pavlovian_painexpectancy`,
+        fear_split $ 'CS-' $ `Pavlovian_painexpectancy`,
+        pooled = TRUE, paired = TRUE,
+        na.rm  = TRUE, mu = 0, hedges.correction = FALSE,
+        conf.level = 0.95,noncentral = FALSE,
+        within = TRUE, subject = NA)
+
+print(cohend)
+
+
+##========================  plot ==============================================
+
+fear_data $ cs_room <- factor(fear_data $ cs_room,levels=c('CS+','CS-'))
+
+
+fig1b<- ggplot(fear_data, aes(x = factor(cs_room), y = Pavlovian_painexpectancy, 
+                      group = factor(cs_room))) +
+  geom_point(aes(colour = factor(cs_room)), alpha = 0.1,show.legend = FALSE) +
+  scale_color_manual(values = c('grey','grey')) +
+  geom_line(aes(group = ID, colour = factor(cs_room)), 
+            alpha = 0.5,show.legend = FALSE) +
+  stat_summary(fun = "mean", geom = "point", size = 0.8, 
+               position = position_dodge(width = 0.1)) +
+  stat_summary(fun = "mean", geom = "line", size = 1) +
+  stat_summary(fun.data = "mean_se", geom = "errorbar", width = 0.2, 
+               color = 'black',show.legend = FALSE) +
+  labs(x = "", y = 'Self-report Pain-US Expectancy') + 
+  scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, 5)) +
+  scale_x_discrete(labels = c('CS+ room ','CS- room'))+
+  theme_classic()+ggtitle("B. ")+ mytheme
+
+ggsave("/Users/mac/Library/CloudStorage/Dropbox/Generalization_2402/2023-2024_GEN/4_resultplot/Counter/1B.png", plot = fig1b, width = 8.27, height = 8.27, units = "in", dpi = 300)
+
+
+
+```
+
+### pupil dilation 
+
+```{r echo = FALSE}
+##========================== preprocessing data  ===============================
+# read data 
+
+excel.file <- file.path("/Users/mac/Library/CloudStorage/Dropbox/",
+                   "Generalization_2402/2023-2024_GEN/2_Data_processing/",
+                   "Gen_Denoised data/1_Pavlovian_data/p1_eyetracking_mix.sav")
+
+pavlov.pd <- read.spss(excel.file,to.data.frame = TRUE)
+
+# dummy coded label for data analysis 
+pavlov.pd <- pavlov.pd  %>% 
+  mutate(
+    
+    dummy_location = case_when(
+      cs_location == "CS+" ~ 0,
+      cs_location == "CS-" ~ 1,
+      TRUE ~ NA_real_  # Handle unexpected values
+    ),
+  
+    dummy_room = case_when(
+      cs_room == "CS+" ~ 0,
+      cs_room == "CS-" ~ 1,
+      TRUE ~ NA_real_
+    ),
+    
+    dummy_counter = case_when(
+      pain_us_location == "stretching" ~ 0,
+      pain_us_location == "bending   "    ~ 1,  # Removed extra spaces
+      TRUE ~ NA_real_  # Handle unexpected values
+    )
+  )
+
+# Made fixed factor as factors
+pavlov.pd$dummy_counter <- as.factor(pavlov.pd$dummy_counter)
+
+pavlov.pd$dummy_room    <- as.factor(pavlov.pd$dummy_room)
+
+pavlov.pd$dummy_location<- as.factor(pavlov.pd$dummy_location)
+
+room_labels     <- c("0" = "CS+ room",     "1" = "CS- room")
+
+location_labels <- c("0" = "CS+ location", "1" = " CS- location")
+
+counter_labels  <- c("0" = "Stretching",   "1" = "Bending")
+
+
+##========================== model comparsion ==================================
+
+# three-way interaction: counter* room * location 
+mod.1 <- lmer(cs_pd ~ 1 + dummy_counter * dummy_room * dummy_location +
+                       (1 | trial_number) + (1+ cs_location|id), data = pavlov.pd)
+# two way: room * location
+mod.2 <- lmer(cs_pd ~ 1 + dummy_room * dummy_location + (1|trial_number) + 
+                         (1 + cs_location | id), data = pavlov.pd)
+
+anova(mod.1,mod.2)  
+
+
+```
+__Model comparision explanation__
+
+The three-way interaction model (mod.1) provides a significantly better fit 
+than the two-way interaction model (mod.2), as indicated by 
+lower AIC (974 vs. 1001) and BIC (880 vs. 935) values. 
+The chi-square test also shows a significant improvement in model fit 
+(ΔDeviance = 55.7, Δdf = 4, p = 2.3e-11).
+
+```{r Pavlovian PD, echo = FALSE}
+
+# mixed-effect model
+mod.1 <- lmer(cs_pd ~ 1 + dummy_room * dummy_location * dummy_counter + 
+                    (1 | trial_number) + (1 + dummy_location | id), 
+                    data = pavlov.pd)
+
+##========================== Summary model =====================================
+# Displays fixed effect estimates, standard errors, t-values, 
+# and random effect structure
+summary(mod.1) 
+
+# Type I ANOVA to examine variance explained by each term sequentially
+  anova(mod.1)  
+
+# Calculates eta-squared for fixed effects
+eta_squared(mod.1)
+
+##========================== Post-hoc ==========================================
+# Compare levels of dummy_location at each level of dummy_counter
+emmeans(mod.1, pairwise ~ dummy_location | dummy_counter, adjust="Holm") 
+
+# Compare levels of dummy_location at each level of dummy_room
+emmeans(mod.1, pairwise ~ dummy_location | dummy_room,    adjust="Holm") 
+
+# effect size
+# stretching: cs+ location vs. cs- location 
+cohen.d(pavlov.pd $ cs_pd[pavlov.pd $ dummy_counter  == '0' & 
+                          pavlov.pd $ dummy_location == "0"],
+        pavlov.pd $ cs_pd[pavlov.pd $ dummy_counter  == "0" & 
+                          pavlov.pd $ dummy_location == "1"],
+        
+        pooled=TRUE,paired= FALSE,
+        na.rm=TRUE, mu=0, hedges.correction=FALSE,
+        conf.level=0.95,noncentral= FALSE,
+        within=TRUE, subject=NA)
+
+# bending: cs+ location vs. cs- location 
+cohen.d(pavlov.pd $ cs_pd[pavlov.pd $ dummy_counter  == "1" & 
+                          pavlov.pd $ dummy_location == "0"],
+        pavlov.pd $ cs_pd[pavlov.pd $ dummy_counter  == '1' &  
+                          pavlov.pd $ dummy_location == "1"],
+        
+        pooled=TRUE,paired= FALSE,
+        na.rm=TRUE, mu=0, hedges.correction=FALSE,
+        conf.level=0.95,noncentral= FALSE,
+        within=TRUE, subject=NA)
+
+
+# cs+room: cs location 
+cohen.d(pavlov.pd $ cs_pd[pavlov.pd $ dummy_room     == "0" & 
+                          pavlov.pd $ dummy_location == "0"],
+        pavlov.pd $ cs_pd[pavlov.pd $ dummy_room     == "0" &
+                          pavlov.pd $ dummy_location == '1'],
+        
+        pooled=TRUE,paired= FALSE,
+        na.rm=TRUE, mu=0, hedges.correction=FALSE,
+        conf.level=0.95,noncentral= FALSE,
+        within=TRUE, subject=NA)
+
+ # cs- room: cs location 
+cohen.d(pavlov.pd $ cs_pd[pavlov.pd $ dummy_room     == "1" & 
+                          pavlov.pd $ dummy_location == "0"],
+        pavlov.pd $ cs_pd[pavlov.pd $ dummy_room     == "1" & 
+                          pavlov.pd $ dummy_location == '1'],
+       
+        pooled=TRUE,paired= FALSE,
+        na.rm=TRUE, mu=0, hedges.correction=FALSE,
+        conf.level=0.95,noncentral= FALSE,
+        within=TRUE, subject=NA)
+
+##========================  plot ===============================================
+
+# Extract the 3-way interaction effect from the model
+eff <- effect("dummy_room * dummy_location*dummy_counter", mod.1)
+
+# Convert effect object to a data frame for ggplot
+eff <- as.data.frame(eff)
+
+#Ensure all dummy variables are treated as factors with defined levels
+eff $ dummy_room     <- factor(eff $ dummy_room,     levels = c('0','1'))
+eff $ dummy_location <- factor(eff $ dummy_location, levels = c('0','1'))
+eff $ dummy_counter  <- factor(eff $ dummy_counter,  levels = c("0",'1'))                                 
+
+# effect plot _  location * room 
+fig1c <- ggplot(eff, aes(x = dummy_location, y = fit, color = dummy_room)) +
+
+  # Add points for estimated effects
+  geom_point(size = 3) +  
+  
+   # Add lines connecting levels
+  geom_line(aes(group = dummy_room), linewidth = 1) + 
+  
+  # Confidence intervals
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2) +  
+  
+  # Wrap by dummy_counter
+  facet_wrap(~ dummy_counter, 
+             labeller = labeller(dummy_counter = counter_labels)) +  
+  
+  scale_x_discrete(labels = location_labels) +
+  
+  
+  scale_y_continuous(limits = c(-0.5,0.4), breaks = seq(-0.4, 0.4, by = 0.2)) +
+  labs(title = " ",
+       x = " ", y = "Pupil Dilation (Effect Estimate)") +
+ 
+   # Custom colors
+  scale_color_manual(values = c("#D76364", "#496c88")) +  
+  
+  theme_classic()+
+  
+  theme(strip.text = element_text(size = 11, face = "bold"),
+   axis.title.y = element_text(size = 11, face = "bold"),
+   axis.title.x = element_text(size = 11, face = "bold"))+ mytheme
+
+ggsave("/Users/mac/Library/CloudStorage/Dropbox/Generalization_2402/2023-2024_GEN/4_resultplot/Counter/1C.png", plot = fig1c, width = 8.27, height = 8.27, units = "in", dpi = 300)
